@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+let client: Anthropic;
 
 export async function POST(req: NextRequest) {
   try {
+    client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const { businessDescription, websiteUrl, keywords } = await req.json();
 
     const input = [
@@ -41,32 +42,13 @@ export async function POST(req: NextRequest) {
       suggestions = [];
     }
 
-    const validated = await Promise.allSettled(
-      suggestions.slice(0, 15).map(async (sub: Record<string, unknown>) => {
-        try {
-          const res = await fetch(
-            `https://www.reddit.com/r/${sub.name}/about.json`,
-            { headers: { "User-Agent": "RedditMarketingApp/1.0" }, signal: AbortSignal.timeout(5000) }
-          );
-          if (!res.ok) return null;
-          const data = await res.json();
-          const info = data?.data;
-          return {
-            ...sub,
-            subscribers: info?.subscribers || 0,
-            displayName: info?.display_name_prefixed || `r/${sub.name}`,
-            communityRules: info?.public_description?.slice(0, 200) || "",
-            over18: info?.over18 || false,
-          };
-        } catch {
-          return null;
-        }
-      })
-    );
-
-    const results = validated
-      .filter((r): r is PromiseFulfilledResult<Record<string, unknown>> => r.status === "fulfilled" && r.value !== null)
-      .map((r) => r.value);
+    const results = suggestions.slice(0, 15).map((sub: Record<string, unknown>) => ({
+      ...sub,
+      subscribers: 0,
+      displayName: sub.displayName || `r/${sub.name}`,
+      communityRules: "",
+      over18: false,
+    }));
 
     return NextResponse.json({ subreddits: results });
   } catch (err) {

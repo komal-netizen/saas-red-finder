@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
 export async function POST(req: NextRequest) {
   try {
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const { posts, businessDescription, keywords, subredditRules } = await req.json();
     if (!posts?.length) return NextResponse.json({ error: "No posts provided" }, { status: 400 });
 
