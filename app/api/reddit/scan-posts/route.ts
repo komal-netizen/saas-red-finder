@@ -1,134 +1,121 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const ONE_MONTH_AGO = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+
+async function redditFetch(url: string): Promise<Response> {
+  return fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/json",
+    },
+    signal: AbortSignal.timeout(12000),
+  });
+}
+
 async function fetchSubredditPosts(subreddit: string): Promise<RedditPost[]> {
-  const urls = [
-    `https://www.reddit.com/r/${subreddit}/hot.json?limit=25&raw_json=1`,
-    `https://www.reddit.com/r/${subreddit}/new.json?limit=15&raw_json=1`,
+  const posts: RedditPost[] = [];
+  const seen = new Set<string>();
+
+  // Fetch from multiple endpoints to get broad coverage of last 30 days
+  const endpoints = [
+    `https://www.reddit.com/r/${subreddit}/top.json?t=month&limit=50&raw_json=1`,
+    `https://www.reddit.com/r/${subreddit}/hot.json?limit=50&raw_json=1`,
+    `https://www.reddit.com/r/${subreddit}/new.json?limit=50&raw_json=1`,
   ];
 
-  const posts: RedditPost[] = [];
-
-  for (const url of urls) {
+  for (const url of endpoints) {
     try {
-      // Try with different user agents to avoid blocks
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; RedditBot/1.0)",
-          "Accept": "application/json",
-        },
-        signal: AbortSignal.timeout(10000),
-      });
+      const res = await redditFetch(url);
+      if (!res.ok) { console.log(`r/${subreddit} ${url} → ${res.status}`); continue; }
 
-      if (res.ok) {
-        const data = await res.json();
-        for (const item of data?.data?.children || []) {
-          const p = item.data;
-          if (p.title) {
-            posts.push({
-              id: p.id,
-              title: p.title,
-              selftext: p.selftext?.slice(0, 500) || "",
-              url: `https://reddit.com${p.permalink}`,
-              subreddit: p.subreddit || subreddit,
-              score: p.score || 0,
-              numComments: p.num_comments || 0,
-              created: p.created_utc || 0,
-              author: p.author || "",
-              flair: p.link_flair_text || "",
-            });
-          }
-        }
-        if (posts.length > 0) break; // Got posts, no need to try next URL
-      } else {
-        console.log(`r/${subreddit} returned ${res.status}`);
+      const data = await res.json();
+      for (const item of data?.data?.children || []) {
+        const p = item.data;
+        if (!p.title || seen.has(p.id)) continue;
+        // Only include posts from last 30 days
+        if (p.created_utc < ONE_MONTH_AGO) continue;
+        seen.add(p.id);
+        posts.push({
+          id: p.id,
+          title: p.title,
+          selftext: p.selftext?.slice(0, 800) || "",
+          url: `https://www.reddit.com${p.permalink}`,  // full post URL
+          subreddit: p.subreddit || subreddit,
+          score: p.score || 0,
+          numComments: p.num_comments || 0,
+          created: p.created_utc || 0,
+          author: p.author || "",
+          flair: p.link_flair_text || "",
+        });
       }
+
+      await new Promise((r) => setTimeout(r, 300));
     } catch (e) {
       console.log(`Fetch error for r/${subreddit}:`, e);
     }
   }
 
+  console.log(`r/${subreddit}: fetched ${posts.length} posts from last 30 days`);
   return posts;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { subreddits, keywords } = await req.json() as { subreddits: string[]; keywords: string };
+    const { subreddits, keywords, postDescription } = await req.json() as {
+      subreddits: string[];
+      keywords: string;
+      postDescription?: string;
+    };
 
     if (!subreddits?.length) {
       return NextResponse.json({ error: "No subreddits provided" }, { status: 400 });
     }
 
-    const keywordList = keywords ? keywords.toLowerCase().split(/[,\s]+/).filter(Boolean) : [];
+    const keywordList = keywords
+      ? keywords.toLowerCase().split(/[,\s]+/).filter(Boolean)
+      : [];
 
-    // Process subreddits sequentially to avoid rate limits
+    const descWords = postDescription
+      ? postDescription.toLowerCase().split(/\s+/).filter((w) => w.length > 3)
+      : [];
+
     const results: SubredditPosts[] = [];
 
     for (const subreddit of subreddits) {
       const posts = await fetchSubredditPosts(subreddit);
 
-      const seen = new Set<string>();
-      const unique = posts.filter((p) => {
-        if (seen.has(p.id)) return false;
-        seen.add(p.id);
-        return true;
-      });
-
-      const scored = unique
+      const scored = posts
         .map((post) => {
           const text = `${post.title} ${post.selftext}`.toLowerCase();
           const keywordHits = keywordList.filter((k) => text.includes(k)).length;
-          const relevance = keywordHits * 20 + Math.min(post.score / 10, 30) + Math.min(post.numComments * 2, 20);
+          const descHits = descWords.filter((w) => text.includes(w)).length;
+          const recency = Math.max(0, 30 - (Date.now() / 1000 - post.created) / 86400); // days ago
+          const relevance =
+            keywordHits * 25 +
+            descHits * 10 +
+            Math.min(post.score / 10, 30) +
+            Math.min(post.numComments * 2, 20) +
+            recency * 0.5;
           return { ...post, relevance: Math.round(relevance) };
         })
+        .filter((p) => p.relevance > 0 || posts.length < 10) // keep all if few results
         .sort((a, b) => b.relevance - a.relevance)
-        .slice(0, 10);
-
-      console.log(`r/${subreddit}: ${scored.length} posts`);
+        .slice(0, 15); // top 15 per subreddit
 
       if (scored.length > 0) {
         results.push({ subreddit, posts: scored });
       }
 
-      // Small delay between requests
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 400));
     }
 
-    console.log(`Total subreddits with posts: ${results.length}`);
+    console.log(`Total: ${results.length} subreddits, ${results.reduce((s, r) => s + r.posts.length, 0)} posts`);
 
-    // If still no results, return Claude-generated mock posts so the flow works
     if (results.length === 0) {
-      const mockResults = subreddits.slice(0, 3).map((subreddit) => ({
-        subreddit,
-        posts: [
-          {
-            id: `mock_${subreddit}_1`,
-            title: `Discussion: Best practices in ${subreddit.replace(/([A-Z])/g, " $1").toLowerCase()}`,
-            selftext: "What are your thoughts on current best practices? Looking for advice from experienced members.",
-            url: `https://reddit.com/r/${subreddit}`,
-            subreddit,
-            score: 45,
-            numComments: 12,
-            created: Date.now() / 1000,
-            author: "community_member",
-            flair: "",
-            relevance: 40,
-          },
-          {
-            id: `mock_${subreddit}_2`,
-            title: `New grad looking for mentorship and career advice`,
-            selftext: "I recently started my career and am looking for guidance. Any mentors or experienced professionals willing to share advice?",
-            url: `https://reddit.com/r/${subreddit}`,
-            subreddit,
-            score: 32,
-            numComments: 8,
-            created: Date.now() / 1000,
-            author: "new_grad_2024",
-            flair: "",
-            relevance: 35,
-          },
-        ],
-      }));
-      return NextResponse.json({ results: mockResults, note: "Using sample posts — Reddit API unavailable" });
+      return NextResponse.json({
+        results: [],
+        note: "Reddit API unavailable from this server. Run locally for real posts.",
+      });
     }
 
     return NextResponse.json({ results });

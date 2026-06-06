@@ -29,7 +29,17 @@ export async function POST(req: NextRequest) {
       if (content.type === "text") {
         try {
           const jsonMatch = content.text.match(/\[[\s\S]*\]/);
-          if (jsonMatch) allComments.push(...JSON.parse(jsonMatch[0]));
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            // Override postUrl with the real URL from the original post data
+            const enriched = parsed.map((c: GeneratedComment, idx: number) => ({
+              ...c,
+              postUrl: batch[idx]?.url || c.postUrl,
+              postTitle: batch[idx]?.title || c.postTitle,
+              subreddit: batch[idx]?.subreddit || c.subreddit,
+            }));
+            allComments.push(...enriched);
+          }
         } catch { /* skip malformed */ }
       }
     }
