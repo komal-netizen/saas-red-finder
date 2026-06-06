@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { BusinessInputStep } from "./components/BusinessInputStep";
 import { SubredditApprovalStep } from "./components/SubredditApprovalStep";
-import { PostScanStep } from "./components/PostScanStep";
-import { CommentReviewStep } from "./components/CommentReviewStep";
+import { ScanSettingsStep } from "./components/ScanSettingsStep";
+import { ReportStep } from "./components/ReportStep";
+import type { ReportItem } from "./components/ScanSettingsStep";
 
 export type BusinessInput = {
   businessDescription: string;
@@ -55,22 +56,29 @@ export type GeneratedComment = {
 const STEPS = [
   { id: 1, label: "Business Info" },
   { id: 2, label: "Subreddits" },
-  { id: 3, label: "Scan Posts" },
-  { id: 4, label: "Comments & Email" },
+  { id: 3, label: "Scan & Generate" },
+  { id: 4, label: "Report" },
 ];
 
 export default function RedditMarketingPage() {
   const [step, setStep] = useState(1);
-  const [businessInput, setBusinessInput] = useState<BusinessInput>({ businessDescription: "", websiteUrl: "", keywords: "", email: "" });
+  const [businessInput, setBusinessInput] = useState<BusinessInput>({
+    businessDescription: "", websiteUrl: "", keywords: "", email: "",
+  });
   const [subreddits, setSubreddits] = useState<Subreddit[]>([]);
   const [approvedSubreddits, setApprovedSubreddits] = useState<string[]>([]);
-  const [scannedPosts, setScannedPosts] = useState<{ subreddit: string; posts: RedditPost[] }[]>([]);
-  const [selectedPosts, setSelectedPosts] = useState<RedditPost[]>([]);
-  const [comments, setComments] = useState<GeneratedComment[]>([]);
+  const [report, setReport] = useState<ReportItem[]>([]);
+
+  const handleStartOver = () => {
+    setStep(1);
+    setBusinessInput({ businessDescription: "", websiteUrl: "", keywords: "", email: "" });
+    setSubreddits([]);
+    setApprovedSubreddits([]);
+    setReport([]);
+  };
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
-      {/* Top nav */}
       <header className="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center gap-3">
           <div className="w-8 h-8 bg-[#ff4500] rounded-lg flex items-center justify-center flex-shrink-0">
@@ -80,13 +88,12 @@ export default function RedditMarketingPage() {
           </div>
           <div>
             <h1 className="text-lg font-bold text-neutral-900 dark:text-white leading-none">Reddit Marketing Agent</h1>
-            <p className="text-xs text-neutral-500 mt-0.5">Find subreddits · Discover posts · Generate safe comments · Grow your brand</p>
+            <p className="text-xs text-neutral-500 mt-0.5">Find subreddits · Auto-scan posts · Generate safe comments · Email report</p>
           </div>
         </div>
       </header>
 
       <div className="max-w-5xl mx-auto p-6">
-        {/* Stepper */}
         <div className="flex items-center mb-8">
           {STEPS.map((s, i) => (
             <div key={s.id} className="flex items-center flex-1 last:flex-none">
@@ -117,16 +124,39 @@ export default function RedditMarketingPage() {
         </div>
 
         {step === 1 && (
-          <BusinessInputStep value={businessInput} onChange={setBusinessInput} onNext={(subs) => { setSubreddits(subs); setStep(2); }} />
+          <BusinessInputStep
+            value={businessInput}
+            onChange={setBusinessInput}
+            onNext={(subs) => { setSubreddits(subs); setStep(2); }}
+          />
         )}
         {step === 2 && (
-          <SubredditApprovalStep subreddits={subreddits} approved={approvedSubreddits} onApprovalChange={setApprovedSubreddits} onBack={() => setStep(1)} onNext={(posts) => { setScannedPosts(posts); setStep(3); }} businessInput={businessInput} />
+          <SubredditApprovalStep
+            subreddits={subreddits}
+            approved={approvedSubreddits}
+            onApprovalChange={setApprovedSubreddits}
+            onBack={() => setStep(1)}
+            onNext={() => setStep(3)}
+            businessInput={businessInput}
+            skipScan
+          />
         )}
         {step === 3 && (
-          <PostScanStep scannedPosts={scannedPosts} selected={selectedPosts} onSelectionChange={setSelectedPosts} onBack={() => setStep(2)} onNext={(generatedComments) => { setComments(generatedComments); setStep(4); }} businessInput={businessInput} />
+          <ScanSettingsStep
+            businessInput={businessInput}
+            approvedSubreddits={approvedSubreddits}
+            onBack={() => setStep(2)}
+            onDone={(r) => { setReport(r); setStep(4); }}
+          />
         )}
         {step === 4 && (
-          <CommentReviewStep comments={comments} onCommentsChange={setComments} businessInput={businessInput} approvedSubreddits={approvedSubreddits} onBack={() => setStep(3)} />
+          <ReportStep
+            report={report}
+            businessInput={businessInput}
+            approvedSubreddits={approvedSubreddits}
+            onBack={() => setStep(3)}
+            onStartOver={handleStartOver}
+          />
         )}
       </div>
     </div>

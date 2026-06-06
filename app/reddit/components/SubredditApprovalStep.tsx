@@ -1,34 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import type { Subreddit, BusinessInput, RedditPost } from "../page";
+import type { Subreddit, BusinessInput } from "../page";
 
 interface Props {
   subreddits: Subreddit[];
   approved: string[];
   onApprovalChange: (approved: string[]) => void;
   onBack: () => void;
-  onNext: (posts: { subreddit: string; posts: RedditPost[] }[]) => void;
+  onNext: () => void;
   businessInput: BusinessInput;
+  skipScan?: boolean;
 }
 
-export function SubredditApprovalStep({ subreddits, approved, onApprovalChange, onBack, onNext, businessInput }: Props) {
-  const [loading, setLoading] = useState(false);
+export function SubredditApprovalStep({ subreddits, approved, onApprovalChange, onBack, onNext }: Props) {
+  const [loading] = useState(false);
   const [error, setError] = useState("");
 
   const toggle = (name: string) => onApprovalChange(approved.includes(name) ? approved.filter((s) => s !== name) : [...approved, name]);
 
-  const handleNext = async () => {
+  const handleNext = () => {
     if (approved.length === 0) { setError("Please approve at least one subreddit."); return; }
-    setError(""); setLoading(true);
-    try {
-      const res = await fetch("/api/reddit/scan-posts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subreddits: approved, keywords: businessInput.keywords }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed");
-      onNext(data.results);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally { setLoading(false); }
+    setError("");
+    onNext();
   };
 
   const fmt = (n: number) => n >= 1000000 ? `${(n/1000000).toFixed(1)}M` : n >= 1000 ? `${(n/1000).toFixed(0)}k` : n || "—";
@@ -78,7 +72,7 @@ export function SubredditApprovalStep({ subreddits, approved, onApprovalChange, 
           {error && <p className="text-sm text-red-500">{error}</p>}
           <span className="text-sm text-neutral-500">{approved.length} of {subreddits.length} selected</span>
           <button onClick={handleNext} disabled={loading} className="flex items-center gap-2 bg-[#ff4500] hover:bg-[#e03d00] disabled:opacity-60 text-white font-medium px-6 py-2.5 rounded-lg text-sm transition-colors">
-            {loading ? <><Spinner />Scanning posts...</> : <>Scan Posts <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg></>}
+            {loading ? <><Spinner />Loading...</> : <>Continue <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg></>}
           </button>
         </div>
       </div>
