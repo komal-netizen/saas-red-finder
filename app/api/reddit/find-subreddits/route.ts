@@ -34,11 +34,16 @@ export async function POST(req: NextRequest) {
     const content = message.content[0];
     if (content.type !== "text") throw new Error("Unexpected response type");
 
+    console.log("Claude raw response:", content.text.slice(0, 500));
+
     let suggestions;
     try {
       const jsonMatch = content.text.match(/\[[\s\S]*\]/);
+      console.log("JSON match found:", !!jsonMatch);
       suggestions = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
-    } catch {
+      console.log("Suggestions count:", suggestions.length);
+    } catch (e) {
+      console.error("JSON parse error:", e);
       suggestions = [];
     }
 
