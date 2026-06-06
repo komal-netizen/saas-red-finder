@@ -97,7 +97,7 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
         r.posts.map((p) => ({ ...(p as object), subreddit: r.subreddit }))
       );
 
-      if (allPosts.length === 0) throw new Error("No matching posts found. Try broader keywords.");
+      if (allPosts.length === 0) throw new Error("No posts found in those subreddits. Reddit may be rate-limiting — wait a minute and try again, or check your subreddit names.");
 
       setProgress(`Found ${allPosts.length} posts. Generating comments...`);
 
