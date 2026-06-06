@@ -3,6 +3,37 @@
 import { useState } from "react";
 import type { BusinessInput, Subreddit } from "../page";
 
+const CACHE_KEY = "reddit_subreddit_cache";
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function hashInput(desc: string, url: string, kw: string) {
+  return btoa(encodeURIComponent(`${desc.trim().toLowerCase()}|${url.trim().toLowerCase()}|${kw.trim().toLowerCase()}`)).slice(0, 32);
+}
+
+function readCache(key: string): Subreddit[] | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const cache = JSON.parse(raw) as Record<string, { data: Subreddit[]; ts: number }>;
+    const entry = cache[key];
+    if (!entry) return null;
+    if (Date.now() - entry.ts > CACHE_TTL_MS) { delete cache[key]; localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); return null; }
+    return entry.data;
+  } catch { return null; }
+}
+
+function writeCache(key: string, data: Subreddit[]) {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    const cache = raw ? JSON.parse(raw) : {};
+    cache[key] = { data, ts: Date.now() };
+    // Keep only last 20 entries
+    const keys = Object.keys(cache);
+    if (keys.length > 20) delete cache[keys[0]];
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch { /* ignore */ }
+}
+
 interface Props {
   value: BusinessInput;
   onChange: (v: BusinessInput) => void;
@@ -12,6 +43,7 @@ interface Props {
 export function BusinessInputStep({ value, onChange, onNext }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fromCache, setFromCache] = useState(false);
 
   const handleSubmit = async () => {
     if (!value.businessDescription && !value.websiteUrl && !value.keywords) {
@@ -19,6 +51,15 @@ export function BusinessInputStep({ value, onChange, onNext }: Props) {
     }
     if (!value.email) { setError("Please enter your email to receive the report."); return; }
     setError("");
+
+    const cacheKey = hashInput(value.businessDescription, value.websiteUrl, value.keywords);
+    const cached = readCache(cacheKey);
+    if (cached) {
+      setFromCache(true);
+      setTimeout(() => { onNext(cached); setFromCache(false); }, 400);
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await fetch("/api/reddit/find-subreddits", {
@@ -28,6 +69,7 @@ export function BusinessInputStep({ value, onChange, onNext }: Props) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
+      writeCache(cacheKey, data.subreddits);
       onNext(data.subreddits);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -61,10 +103,18 @@ export function BusinessInputStep({ value, onChange, onNext }: Props) {
         </div>
       </div>
       {error && <p className="mt-4 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-lg">{error}</p>}
-      <div className="mt-6">
-        <button onClick={handleSubmit} disabled={loading} className="flex items-center gap-2 bg-[#ff4500] hover:bg-[#e03d00] disabled:opacity-60 text-white font-medium px-6 py-2.5 rounded-lg text-sm transition-colors">
-          {loading ? <><Spinner />Finding subreddits...</> : <>Find Subreddits <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg></>}
+      <div className="mt-6 flex items-center gap-3">
+        <button onClick={handleSubmit} disabled={loading || fromCache} className="flex items-center gap-2 bg-[#ff4500] hover:bg-[#e03d00] disabled:opacity-60 text-white font-medium px-6 py-2.5 rounded-lg text-sm transition-colors">
+          {loading ? <><Spinner />Finding subreddits...</> :
+           fromCache ? <><Spinner />Loading from cache...</> :
+           <>Find Subreddits <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg></>}
         </button>
+        {(value.businessDescription || value.keywords) && readCache(hashInput(value.businessDescription, value.websiteUrl, value.keywords)) && (
+          <span className="text-xs text-green-600 flex items-center gap-1">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+            Cached results available — instant load
+          </span>
+        )}
       </div>
     </div>
   );
