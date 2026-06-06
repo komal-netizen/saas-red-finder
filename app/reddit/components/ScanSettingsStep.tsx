@@ -99,13 +99,27 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
 
       if (allPosts.length === 0) throw new Error("No posts found in those subreddits. Reddit may be rate-limiting — wait a minute and try again, or check your subreddit names.");
 
-      setProgress(`Found ${allPosts.length} posts. Generating comments...`);
+      setProgress(`Found ${allPosts.length} posts. Using AI to find the most relevant ones...`);
+
+      const filterRes = await fetch("/api/reddit/filter-posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          posts: allPosts,
+          postTypes: selectedPostTypes,
+          businessDescription: businessInput.businessDescription,
+        }),
+      });
+      const filterData = await filterRes.json();
+      const relevantPosts = filterData.filteredPosts?.length > 0 ? filterData.filteredPosts : allPosts.slice(0, 20);
+
+      setProgress(`Found ${relevantPosts.length} relevant posts. Generating comments...`);
 
       const commentRes = await fetch("/api/reddit/generate-comments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          posts: allPosts,
+          posts: relevantPosts,
           businessDescription: businessInput.businessDescription,
           keywords: searchKeywords,
           subredditRules: {},

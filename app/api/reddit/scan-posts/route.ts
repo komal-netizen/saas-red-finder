@@ -88,18 +88,16 @@ export async function POST(req: NextRequest) {
         .map((post) => {
           const text = `${post.title} ${post.selftext}`.toLowerCase();
           const keywordHits = keywordList.filter((k) => text.includes(k)).length;
-          const descHits = descWords.filter((w) => text.includes(w)).length;
           const recency = Math.max(0, 30 - (Date.now() / 1000 - post.created) / 86400);
-          const engagementScore = Math.min(post.score / 10, 30) + Math.min(post.numComments * 2, 20);
           const relevance =
-            keywordHits * 25 +
-            descHits * 10 +
-            engagementScore +
+            keywordHits * 20 +
+            Math.min(post.score / 10, 30) +
+            Math.min(post.numComments * 2, 20) +
             recency * 0.5;
           return { ...post, relevance: Math.round(relevance) };
         })
         .sort((a, b) => b.relevance - a.relevance)
-        .slice(0, 20); // top 20 per subreddit, no relevance filter
+        .slice(0, 30); // top 30 per subreddit — Claude will do semantic filtering next
 
       if (scored.length > 0) {
         results.push({ subreddit, posts: scored });
