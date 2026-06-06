@@ -16,8 +16,19 @@ interface Props {
 export function SubredditApprovalStep({ subreddits, approved, onApprovalChange, onBack, onNext }: Props) {
   const [loading] = useState(false);
   const [error, setError] = useState("");
+  const [manualInput, setManualInput] = useState("");
 
   const toggle = (name: string) => onApprovalChange(approved.includes(name) ? approved.filter((s) => s !== name) : [...approved, name]);
+
+  const addManual = () => {
+    const names = manualInput
+      .split(/[\n,\s]+/)
+      .map((s) => s.replace(/^r\//, "").trim().toLowerCase())
+      .filter((s) => s.length > 0);
+    const merged = Array.from(new Set([...approved, ...names]));
+    onApprovalChange(merged);
+    setManualInput("");
+  };
 
   const handleNext = () => {
     if (approved.length === 0) { setError("Please approve at least one subreddit."); return; }
@@ -64,13 +75,47 @@ export function SubredditApprovalStep({ subreddits, approved, onApprovalChange, 
           })}
         </div>
       </div>
+      {/* Manual subreddit input */}
+      <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5">
+        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+          Add subreddits manually <span className="text-neutral-400 font-normal">(paste one per line, or comma-separated)</span>
+        </p>
+        <div className="flex gap-2">
+          <textarea
+            rows={2}
+            className="flex-1 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-[#ff4500] focus:border-transparent resize-none"
+            placeholder="r/physicaltherapy, r/PTschool&#10;r/DPT"
+            value={manualInput}
+            onChange={(e) => setManualInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) addManual(); }}
+          />
+          <button
+            onClick={addManual}
+            disabled={!manualInput.trim()}
+            className="self-stretch px-4 bg-neutral-900 dark:bg-white dark:text-neutral-900 text-white text-sm font-medium rounded-lg disabled:opacity-40 hover:bg-neutral-700 transition-colors"
+          >
+            Add
+          </button>
+        </div>
+        {approved.filter((s) => !subreddits.find((sub) => sub.name === s)).length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {approved.filter((s) => !subreddits.find((sub) => sub.name === s)).map((s) => (
+              <span key={s} className="flex items-center gap-1.5 text-xs bg-orange-50 dark:bg-orange-900/20 text-[#ff4500] border border-orange-200 dark:border-orange-800 px-2.5 py-1 rounded-full">
+                r/{s}
+                <button onClick={() => onApprovalChange(approved.filter((a) => a !== s))} className="hover:text-red-500">×</button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" /></svg>Back
         </button>
         <div className="flex items-center gap-4">
           {error && <p className="text-sm text-red-500">{error}</p>}
-          <span className="text-sm text-neutral-500">{approved.length} of {subreddits.length} selected</span>
+          <span className="text-sm text-neutral-500">{approved.length} subreddit{approved.length !== 1 ? "s" : ""} selected</span>
           <button onClick={handleNext} disabled={loading} className="flex items-center gap-2 bg-[#ff4500] hover:bg-[#e03d00] disabled:opacity-60 text-white font-medium px-6 py-2.5 rounded-lg text-sm transition-colors">
             {loading ? <><Spinner />Loading...</> : <>Continue <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg></>}
           </button>
