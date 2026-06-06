@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { BusinessInput } from "../page";
 
 interface Props {
@@ -29,8 +29,35 @@ const SCHEDULE_OPTIONS = [
 export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, onDone }: Props) {
   const [postDescription, setPostDescription] = useState("");
   const [searchKeywords, setSearchKeywords] = useState(businessInput.keywords || "");
+  const [postSuggestions, setPostSuggestions] = useState<string[]>([]);
+  const [keywordSuggestions, setKeywordSuggestions] = useState<string[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [schedule, setSchedule] = useState("manual");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      setLoadingSuggestions(true);
+      try {
+        const res = await fetch("/api/reddit/suggestions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            businessDescription: businessInput.businessDescription,
+            websiteUrl: businessInput.websiteUrl,
+            keywords: businessInput.keywords,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setPostSuggestions(data.postSuggestions || []);
+          setKeywordSuggestions(data.keywordSuggestions || []);
+        }
+      } catch { /* silent */ }
+      finally { setLoadingSuggestions(false); }
+    };
+    fetchSuggestions();
+  }, []);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
 
@@ -120,9 +147,14 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
 
       {/* Post description */}
       <div>
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-          What kind of posts are you looking for?
-        </label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+            What kind of posts are you looking for?
+          </label>
+          {loadingSuggestions && (
+            <span className="text-xs text-neutral-400 flex items-center gap-1"><Spinner />Generating suggestions...</span>
+          )}
+        </div>
         <textarea
           rows={3}
           className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 py-3 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-[#ff4500] focus:border-transparent resize-none"
@@ -130,6 +162,26 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
           value={postDescription}
           onChange={(e) => setPostDescription(e.target.value)}
         />
+        {postSuggestions.length > 0 && (
+          <div className="mt-2">
+            <p className="text-xs text-neutral-400 mb-1.5">Quick suggestions — click to use:</p>
+            <div className="flex flex-wrap gap-2">
+              {postSuggestions.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setPostDescription(s)}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                    postDescription === s
+                      ? "border-[#ff4500] bg-orange-50 dark:bg-orange-900/20 text-[#ff4500]"
+                      : "border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:border-[#ff4500] hover:text-[#ff4500]"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Keywords */}
@@ -144,6 +196,33 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
           value={searchKeywords}
           onChange={(e) => setSearchKeywords(e.target.value)}
         />
+        {keywordSuggestions.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {keywordSuggestions.map((k) => {
+              const active = searchKeywords.split(/,\s*/).map(s => s.trim()).includes(k);
+              return (
+                <button
+                  key={k}
+                  onClick={() => {
+                    const current = searchKeywords.split(/,\s*/).map(s => s.trim()).filter(Boolean);
+                    if (active) {
+                      setSearchKeywords(current.filter(s => s !== k).join(", "));
+                    } else {
+                      setSearchKeywords([...current, k].join(", "));
+                    }
+                  }}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                    active
+                      ? "border-[#ff4500] bg-orange-50 dark:bg-orange-900/20 text-[#ff4500]"
+                      : "border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:border-[#ff4500] hover:text-[#ff4500]"
+                  }`}
+                >
+                  {active ? "✓ " : "+ "}{k}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Schedule */}
