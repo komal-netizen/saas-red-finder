@@ -7,7 +7,7 @@ interface Props {
   businessInput: BusinessInput;
   approvedSubreddits: string[];
   onBack: () => void;
-  onDone: (report: ReportItem[]) => void;
+  onDone: (postTypes: string[], keywords: string, schedule: string) => void;
 }
 
 export type ReportItem = {
@@ -33,8 +33,7 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
   const [postSuggestions, setPostSuggestions] = useState<string[]>([]);
   const [keywordSuggestions, setKeywordSuggestions] = useState<string[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-  const [schedule, setSchedule] = useState("manual");
-  const [loading, setLoading] = useState(false);
+  const [schedule, setSchedule] = useState("daily");
 
   const togglePostType = (s: string) =>
     setSelectedPostTypes((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
@@ -70,97 +69,12 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
     };
     fetchSuggestions();
   }, []);
-  const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
 
-  const handleRun = async () => {
+  const handleSave = () => {
     if (selectedPostTypes.length === 0) { setError("Please select or add at least one post type."); return; }
     setError("");
-    setLoading(true);
-    const postDescription = selectedPostTypes.join(". ");
-
-    try {
-      setProgress("Scanning subreddits for matching posts...");
-      const scanRes = await fetch("/api/reddit/scan-posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subreddits: approvedSubreddits,
-          keywords: searchKeywords,
-          postDescription,
-        }),
-      });
-      const scanData = await scanRes.json();
-      if (!scanRes.ok) throw new Error(scanData.error || "Failed to scan posts");
-
-      const allPosts = (scanData.results as { subreddit: string; posts: unknown[] }[]).flatMap((r) =>
-        r.posts.map((p) => ({ ...(p as object), subreddit: r.subreddit }))
-      );
-
-      if (allPosts.length === 0) throw new Error("No posts found in those subreddits. Reddit may be rate-limiting — wait a minute and try again, or check your subreddit names.");
-
-      setProgress(`Found ${allPosts.length} posts. Using AI to find the most relevant ones...`);
-
-      const filterRes = await fetch("/api/reddit/filter-posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          posts: allPosts,
-          postTypes: selectedPostTypes,
-          businessDescription: businessInput.businessDescription,
-        }),
-      });
-      const filterData = await filterRes.json();
-      const relevantPosts = filterData.filteredPosts?.length > 0 ? filterData.filteredPosts : allPosts.slice(0, 20);
-
-      setProgress(`Found ${relevantPosts.length} relevant posts. Generating comments...`);
-
-      const commentRes = await fetch("/api/reddit/generate-comments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          posts: relevantPosts,
-          businessDescription: businessInput.businessDescription,
-          keywords: searchKeywords,
-          subredditRules: {},
-        }),
-      });
-      const commentData = await commentRes.json();
-      if (!commentRes.ok) throw new Error(commentData.error || "Failed to generate comments");
-
-      const report: ReportItem[] = (commentData.comments || []).map((c: {
-        subreddit: string; postTitle: string; postUrl: string;
-        comment: string; safetyScore: number; keywordsUsed: string[];
-      }) => ({
-        subreddit: c.subreddit,
-        postTitle: c.postTitle,
-        postUrl: c.postUrl,
-        comment: c.comment,
-        safetyScore: c.safetyScore,
-        keywordsUsed: c.keywordsUsed || [],
-      }));
-
-      if (schedule !== "manual") {
-        await fetch("/api/reddit/save-schedule", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            schedule,
-            businessInput,
-            approvedSubreddits,
-            postDescription: selectedPostTypes.join(". "),
-            searchKeywords,
-          }),
-        });
-      }
-
-      onDone(report);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setLoading(false);
-      setProgress("");
-    }
+    onDone(selectedPostTypes, searchKeywords, schedule);
   };
 
   return (
@@ -309,24 +223,17 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
 
       {error && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-lg">{error}</p>}
 
-      {loading && (
-        <div className="flex items-center gap-3 text-sm text-neutral-500 bg-neutral-50 dark:bg-neutral-800 px-4 py-3 rounded-lg">
-          <Spinner />
-          {progress}
-        </div>
-      )}
-
       <div className="flex items-center justify-between pt-2">
         <button onClick={onBack} className="flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" /></svg>
           Back
         </button>
         <button
-          onClick={handleRun}
-          disabled={loading}
-          className="flex items-center gap-2 bg-[#ff4500] hover:bg-[#e03d00] disabled:opacity-60 text-white font-medium px-6 py-2.5 rounded-lg text-sm transition-colors"
+          onClick={handleSave}
+          className="flex items-center gap-2 bg-[#ff4500] hover:bg-[#e03d00] text-white font-medium px-6 py-2.5 rounded-lg text-sm transition-colors"
         >
-          {loading ? <><Spinner />Scanning & generating...</> : <>Generate Report <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg></>}
+          Save Workflow & Continue
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
         </button>
       </div>
     </div>
