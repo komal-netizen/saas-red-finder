@@ -1,89 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const maxDuration = 300; // 5 minutes
+export const maxDuration = 120;
 
 const ONE_MONTH_AGO = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+const ARCTIC_BASE = "https://arctic-shift.quanticdev.com/api";
 
-function randomDelay(minMs: number, maxMs: number) {
-  const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-// Rotate through realistic user agents
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
-];
-
-function pickUserAgent() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
-
-async function redditFetch(url: string): Promise<Response> {
-  return fetch(url, {
-    headers: {
-      "User-Agent": pickUserAgent(),
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Accept-Encoding": "gzip, deflate, br",
-      "DNT": "1",
-      "Connection": "keep-alive",
-      "Upgrade-Insecure-Requests": "1",
-      "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-      "Sec-Ch-Ua-Mobile": "?0",
-      "Sec-Ch-Ua-Platform": '"Windows"',
-      "Sec-Fetch-Dest": "document",
-      "Sec-Fetch-Mode": "navigate",
-      "Sec-Fetch-Site": "none",
-      "Sec-Fetch-User": "?1",
-      "Cache-Control": "max-age=0",
-    },
-    signal: AbortSignal.timeout(20000),
-  });
-}
-
-async function fetchSubredditPosts(subreddit: string): Promise<RedditPost[]> {
+async function fetchFromArctic(subreddit: string, keywords: string): Promise<RedditPost[]> {
   const posts: RedditPost[] = [];
   const seen = new Set<string>();
+  const afterDate = new Date(ONE_MONTH_AGO * 1000).toISOString();
 
-  const endpoints = [
-    `https://old.reddit.com/r/${subreddit}/top.json?t=month&limit=50&raw_json=1`,
-    `https://old.reddit.com/r/${subreddit}/hot.json?limit=50&raw_json=1`,
-    `https://old.reddit.com/r/${subreddit}/new.json?limit=50&raw_json=1`,
-  ];
+  // Search by keyword query + subreddit, get up to 100 posts
+  const queries: string[] = [];
 
-  for (const url of endpoints) {
+  // If keywords provided, search for each one
+  if (keywords) {
+    const kwList = keywords.split(/[,]+/).map(s => s.trim()).filter(Boolean).slice(0, 4);
+    for (const kw of kwList) {
+      queries.push(kw);
+    }
+  } else {
+    queries.push(""); // no keyword filter, get general posts
+  }
+
+  for (const query of queries) {
     try {
-      // Wait 2–5 seconds between each request, like a human browsing
-      await randomDelay(2000, 5000);
+      const params = new URLSearchParams({
+        subreddit,
+        after: afterDate,
+        limit: "100",
+        sort: "desc",
+        ...(query ? { query } : {}),
+      });
 
-      const res = await redditFetch(url);
+      const url = `${ARCTIC_BASE}/posts/search?${params}`;
+      console.log(`Arctic Shift: ${url}`);
 
-      if (res.status === 429) {
-        // Rate limited — wait longer and skip
-        console.log(`r/${subreddit} rate limited (429), waiting 10s...`);
-        await randomDelay(10000, 15000);
-        continue;
-      }
+      const res = await fetch(url, {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(15000),
+      });
 
       if (!res.ok) {
-        console.log(`r/${subreddit} ${url} → ${res.status}`);
+        console.log(`Arctic Shift r/${subreddit} query="${query}" → ${res.status}`);
         continue;
       }
 
       const data = await res.json();
-      for (const item of data?.data?.children || []) {
-        const p = item.data;
+      const items = data?.data || [];
+
+      for (const p of items) {
         if (!p.title || seen.has(p.id)) continue;
-        if (p.created_utc < ONE_MONTH_AGO) continue;
         seen.add(p.id);
         posts.push({
           id: p.id,
           title: p.title,
-          selftext: p.selftext?.slice(0, 800) || "",
+          selftext: (p.selftext || "").slice(0, 800),
           url: `https://www.reddit.com${p.permalink}`,
           subreddit: p.subreddit || subreddit,
           score: p.score || 0,
@@ -93,13 +65,12 @@ async function fetchSubredditPosts(subreddit: string): Promise<RedditPost[]> {
           flair: p.link_flair_text || "",
         });
       }
-
     } catch (e) {
-      console.log(`Fetch error for r/${subreddit}:`, e);
+      console.log(`Arctic Shift error for r/${subreddit}:`, e);
     }
   }
 
-  console.log(`r/${subreddit}: fetched ${posts.length} posts from last 30 days`);
+  console.log(`r/${subreddit}: fetched ${posts.length} posts via Arctic Shift`);
   return posts;
 }
 
@@ -108,7 +79,6 @@ export async function POST(req: NextRequest) {
     const { subreddits, keywords } = await req.json() as {
       subreddits: string[];
       keywords: string;
-      postDescription?: string;
     };
 
     if (!subreddits?.length) {
@@ -122,7 +92,7 @@ export async function POST(req: NextRequest) {
     const results: SubredditPosts[] = [];
 
     for (const subreddit of subreddits) {
-      const posts = await fetchSubredditPosts(subreddit);
+      const posts = await fetchFromArctic(subreddit, keywords);
 
       const scored = posts
         .map((post) => {
@@ -142,15 +112,12 @@ export async function POST(req: NextRequest) {
       if (scored.length > 0) {
         results.push({ subreddit, posts: scored });
       }
-
-      // Wait 3–7 seconds between subreddits
-      await randomDelay(3000, 7000);
     }
 
     console.log(`Total: ${results.length} subreddits, ${results.reduce((s, r) => s + r.posts.length, 0)} posts`);
 
     if (results.length === 0) {
-      return NextResponse.json({ results: [], note: "No posts returned from Reddit." });
+      return NextResponse.json({ results: [], note: "No posts returned from Arctic Shift." });
     }
 
     return NextResponse.json({ results });
