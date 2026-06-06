@@ -27,13 +27,25 @@ const SCHEDULE_OPTIONS = [
 ];
 
 export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, onDone }: Props) {
-  const [postDescription, setPostDescription] = useState("");
+  const [selectedPostTypes, setSelectedPostTypes] = useState<string[]>([]);
+  const [customPostType, setCustomPostType] = useState("");
   const [searchKeywords, setSearchKeywords] = useState(businessInput.keywords || "");
   const [postSuggestions, setPostSuggestions] = useState<string[]>([]);
   const [keywordSuggestions, setKeywordSuggestions] = useState<string[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [schedule, setSchedule] = useState("manual");
   const [loading, setLoading] = useState(false);
+
+  const togglePostType = (s: string) =>
+    setSelectedPostTypes((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
+
+  const addCustom = () => {
+    const val = customPostType.trim();
+    if (val && !selectedPostTypes.includes(val)) {
+      setSelectedPostTypes((prev) => [...prev, val]);
+    }
+    setCustomPostType("");
+  };
 
   useEffect(() => {
     const fetchSuggestions = async () => {
@@ -62,9 +74,10 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
   const [error, setError] = useState("");
 
   const handleRun = async () => {
-    if (!postDescription) { setError("Please describe what kind of posts to look for."); return; }
+    if (selectedPostTypes.length === 0) { setError("Please select or add at least one post type."); return; }
     setError("");
     setLoading(true);
+    const postDescription = selectedPostTypes.join(". ");
 
     try {
       setProgress("Scanning subreddits for matching posts...");
@@ -121,7 +134,7 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
             schedule,
             businessInput,
             approvedSubreddits,
-            postDescription,
+            postDescription: selectedPostTypes.join(". "),
             searchKeywords,
           }),
         });
@@ -145,43 +158,71 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
         </p>
       </div>
 
-      {/* Post description */}
+      {/* Post types */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
             What kind of posts are you looking for?
+            <span className="text-neutral-400 font-normal ml-1">(select multiple)</span>
           </label>
           {loadingSuggestions && (
             <span className="text-xs text-neutral-400 flex items-center gap-1"><Spinner />Generating suggestions...</span>
           )}
         </div>
-        <textarea
-          rows={3}
-          className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 py-3 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-[#ff4500] focus:border-transparent resize-none"
-          placeholder="e.g. New grad physical therapists asking for career advice, mentorship, or struggling with their first job..."
-          value={postDescription}
-          onChange={(e) => setPostDescription(e.target.value)}
-        />
+
+        {/* Suggestion chips */}
         {postSuggestions.length > 0 && (
-          <div className="mt-2">
-            <p className="text-xs text-neutral-400 mb-1.5">Quick suggestions — click to use:</p>
-            <div className="flex flex-wrap gap-2">
-              {postSuggestions.map((s) => (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {postSuggestions.map((s) => {
+              const active = selectedPostTypes.includes(s);
+              return (
                 <button
                   key={s}
-                  onClick={() => setPostDescription(s)}
+                  onClick={() => togglePostType(s)}
                   className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
-                    postDescription === s
+                    active
                       ? "border-[#ff4500] bg-orange-50 dark:bg-orange-900/20 text-[#ff4500]"
                       : "border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:border-[#ff4500] hover:text-[#ff4500]"
                   }`}
                 >
-                  {s}
+                  {active ? "✓ " : "+ "}{s}
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
         )}
+
+        {/* Selected tags */}
+        {selectedPostTypes.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3 p-3 bg-orange-50 dark:bg-orange-900/10 rounded-lg border border-orange-100 dark:border-orange-900/30">
+            <span className="text-xs text-neutral-400 w-full mb-1">Selected post types:</span>
+            {selectedPostTypes.map((s) => (
+              <span key={s} className="flex items-center gap-1.5 text-xs bg-white dark:bg-neutral-800 text-[#ff4500] border border-orange-200 dark:border-orange-800 px-2.5 py-1 rounded-full">
+                {s}
+                <button onClick={() => togglePostType(s)} className="hover:text-red-500 font-bold">×</button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Custom post type input */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            className="flex-1 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-[#ff4500] focus:border-transparent"
+            placeholder="Add custom post type..."
+            value={customPostType}
+            onChange={(e) => setCustomPostType(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } }}
+          />
+          <button
+            onClick={addCustom}
+            disabled={!customPostType.trim()}
+            className="px-4 py-2 bg-neutral-900 dark:bg-white dark:text-neutral-900 text-white text-sm font-medium rounded-lg disabled:opacity-40 hover:bg-neutral-700 transition-colors"
+          >
+            Add
+          </button>
+        </div>
       </div>
 
       {/* Keywords */}
