@@ -5,10 +5,19 @@ const ONE_MONTH_AGO = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
 async function redditFetch(url: string): Promise<Response> {
   return fetch(url, {
     headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "application/json",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.5",
+      "Accept-Encoding": "gzip, deflate, br",
+      "DNT": "1",
+      "Connection": "keep-alive",
+      "Upgrade-Insecure-Requests": "1",
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "none",
+      "Cache-Control": "max-age=0",
     },
-    signal: AbortSignal.timeout(12000),
+    signal: AbortSignal.timeout(15000),
   });
 }
 
@@ -18,9 +27,9 @@ async function fetchSubredditPosts(subreddit: string): Promise<RedditPost[]> {
 
   // Fetch from multiple endpoints to get broad coverage of last 30 days
   const endpoints = [
-    `https://www.reddit.com/r/${subreddit}/top.json?t=month&limit=50&raw_json=1`,
-    `https://www.reddit.com/r/${subreddit}/hot.json?limit=50&raw_json=1`,
-    `https://www.reddit.com/r/${subreddit}/new.json?limit=50&raw_json=1`,
+    `https://old.reddit.com/r/${subreddit}/top.json?t=month&limit=50&raw_json=1`,
+    `https://old.reddit.com/r/${subreddit}/hot.json?limit=50&raw_json=1`,
+    `https://old.reddit.com/r/${subreddit}/new.json?limit=50&raw_json=1`,
   ];
 
   for (const url of endpoints) {
@@ -39,7 +48,7 @@ async function fetchSubredditPosts(subreddit: string): Promise<RedditPost[]> {
           id: p.id,
           title: p.title,
           selftext: p.selftext?.slice(0, 800) || "",
-          url: `https://www.reddit.com${p.permalink}`,  // full post URL
+          url: `https://www.reddit.com${p.permalink}`,
           subreddit: p.subreddit || subreddit,
           score: p.score || 0,
           numComments: p.num_comments || 0,
