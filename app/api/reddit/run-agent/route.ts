@@ -61,20 +61,30 @@ export async function POST(req: NextRequest) {
           max_tokens: 1024,
           messages: [{
             role: "user",
-            content: `You are helping a business find Reddit posts where they can add genuine value with a comment.
+            content: `You are a strict relevance filter. A business wants to comment on Reddit posts where they can genuinely help.
 
 Business: ${businessDescription}
 
-They want posts matching ANY of these:
+Target audience and purpose: This business should ONLY engage where the post author or commenters are people this business directly serves. The comment must naturally solve their problem.
+
+Post types to look for (these are semantic descriptions, not keywords):
 ${postTypes.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+
+A post PASSES (score 70+) only if ALL of these are true:
+- The post author is clearly someone this business helps (matches the target audience)
+- The post topic matches at least one of the post type descriptions above
+- Leaving a comment about this business would genuinely help the person, not feel forced or spammy
+
+A post FAILS (score below 70) if:
+- The post is about a different audience (e.g. patients, not practitioners)
+- The post is news, a poll, or general discussion not seeking help
+- The business solution doesn't directly address what the person is struggling with
 
 Posts (index | subreddit | title | excerpt):
 ${postList}
 
-Score each post 0-100 for relevance (0=irrelevant, 100=perfect match). Only return posts scoring 45+.
-
-Return ONLY JSON array:
-[{"index": 0, "score": 85, "reason": "brief why"}]`,
+Score each post 0-100. Return ONLY JSON array:
+[{"index": 0, "score": 85, "reason": "brief why this person needs what the business offers"}]`,
           }],
         });
 
@@ -84,7 +94,7 @@ Return ONLY JSON array:
           if (match) {
             const scored = JSON.parse(match[0]) as { index: number; score: number; reason: string }[];
             for (const s of scored) {
-              if (s.score >= 45 && batch[s.index]) {
+              if (s.score >= 70 && batch[s.index]) {
                 relevantPosts.push({ ...batch[s.index], matchReason: s.reason, semanticScore: s.score });
               }
             }
