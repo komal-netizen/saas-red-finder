@@ -31,6 +31,7 @@ export type Project = {
   approved_subreddits: string[];
   post_types: string[];
   schedule: string;
+  tone_samples: string;
   updated_at: string;
 };
 
@@ -304,6 +305,7 @@ export default function RedditPage() {
             keywords={activeProject.keywords}
             schedule={activeProject.schedule}
             projectId={activeProject.id}
+            toneSamples={activeProject.tone_samples || ""}
             onEditWorkflow={() => editProject(activeProject)}
           />
         )}

@@ -34,13 +34,14 @@ export async function POST(req: NextRequest) {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const resend = new Resend(process.env.RESEND_API_KEY);
 
-    const { posts, postTypes, keywords, businessDescription, email, schedule } = await req.json() as {
+    const { posts, postTypes, keywords, businessDescription, email, schedule, toneSamples } = await req.json() as {
       posts: Post[];
       postTypes: string[];
       keywords: string;
       businessDescription: string;
       email: string;
       schedule: string;
+      toneSamples?: string;
     };
 
     if (!posts?.length) return NextResponse.json({ error: "No posts provided" }, { status: 400 });
@@ -130,10 +131,14 @@ Score each post 0-100. Return ONLY JSON array:
 Business: ${businessDescription}
 Keywords to weave in naturally: ${keywords || "none"}
 
-RULES:
+${toneSamples?.trim() ? `WRITING STYLE — the person's actual writing samples are below. Study their tone, vocabulary, sentence length, how casual or formal they are, how they give advice, their personality. Write comments that sound EXACTLY like this person wrote them:
+
+${toneSamples.slice(0, 2000)}
+
+` : ""}RULES:
 - Provide real value first — answer their actual question/problem
 - Mention the business only if it naturally fits (not forced)
-- Sound like a real person, not a marketer
+- ${toneSamples?.trim() ? "Match the writing style from the samples above — same vocabulary, sentence length, tone, and personality" : "Sound like a real person, not a marketer"}
 - 3-5 sentences, conversational Reddit tone
 - Never say "I work for" or sound like an ad
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { BusinessInput } from "../page";
+import { ToneSettings } from "./ToneSettings";
 
 interface Run {
   id: string;
@@ -18,6 +19,7 @@ interface Props {
   keywords: string;
   schedule: string;
   projectId: string;
+  toneSamples?: string;
   onEditWorkflow: () => void;
 }
 
@@ -100,13 +102,14 @@ async function fetchSubredditPosts(subreddit: string, sinceSeconds: number): Pro
   return posts;
 }
 
-export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes, keywords, schedule, projectId, onEditWorkflow }: Props) {
+export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes, keywords, schedule, projectId, toneSamples: initialToneSamples = "", onEditWorkflow }: Props) {
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [error, setError] = useState("");
   const [lastRun, setLastRun] = useState<string | null>(null);
   const [postCount, setPostCount] = useState(0);
   const [resultCount, setResultCount] = useState(0);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [toneSamples, setToneSamples] = useState(initialToneSamples);
 
   useEffect(() => {
     if (!projectId) return;
@@ -154,6 +157,7 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
           businessDescription: businessInput.businessDescription,
           email: businessInput.email,
           schedule,
+          toneSamples,
         }),
       });
 
@@ -324,6 +328,13 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
           Apify fetches Reddit posts, then AI generates comments and emails you the full report.
         </p>
       </div>
+
+      {/* Tone settings */}
+      <ToneSettings
+        projectId={projectId}
+        initialSamples={toneSamples}
+        onSaved={setToneSamples}
+      />
 
       {/* Run history */}
       {runs.length > 0 && (
