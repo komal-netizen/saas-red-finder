@@ -4,7 +4,7 @@ export const maxDuration = 120;
 
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 const ACTOR_ID = "trudax~reddit-scraper-lite";
-const ACTOR_ID_FALLBACK = "apify~reddit-scraper";
+const ACTOR_ID_FALLBACK = "trudax~reddit-scraper";
 
 interface RedditPost {
   id: string;
@@ -26,30 +26,20 @@ async function fetchPostsViaApify(subreddit: string, keywords: string): Promise<
     return [];
   }
 
-  const searches = keywords
-    ? keywords.split(/[,]+/).map(k => k.trim()).filter(Boolean).slice(0, 3)
-    : [""];
-
-  const startUrls = searches.map(kw => ({
-    url: kw
-      ? `https://www.reddit.com/r/${subreddit}/search/?q=${encodeURIComponent(kw)}&sort=new&t=month`
-      : `https://www.reddit.com/r/${subreddit}/new/`,
-  }));
-
-  // Also add a direct new posts URL
-  startUrls.push({ url: `https://www.reddit.com/r/${subreddit}/new/` });
+  // Use a single URL to keep actor runtime short and avoid timeouts
+  const startUrls = [{ url: `https://www.reddit.com/r/${subreddit}/new/` }];
 
   const input = {
     startUrls,
-    maxItems: 50,
-    maxPostCount: 50,
+    maxItems: 20,
+    maxPostCount: 20,
     skipComments: true,
     proxy: { useApifyProxy: true },
   };
 
   try {
     const runRes = await fetch(
-      `https://api.apify.com/v2/acts/${ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=90&memory=512`,
+      `https://api.apify.com/v2/acts/${ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=120&memory=1024`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -68,7 +58,7 @@ async function fetchPostsViaApify(subreddit: string, keywords: string): Promise<
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ startUrls, maxItems: 50, skipComments: true, proxy: { useApifyProxy: true } }),
+          body: JSON.stringify({ startUrls, maxItems: 20, skipComments: true, proxy: { useApifyProxy: true } }),
           signal: AbortSignal.timeout(100000),
         }
       );
