@@ -113,7 +113,7 @@ Score each post 0-100. Return ONLY JSON array:
     const postsToProcess = relevantPosts.slice(0, 30);
 
     for (let i = 0; i < postsToProcess.length; i += commentBatch) {
-      if (i > 0) await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
+      if (i > 0) await new Promise(r => setTimeout(r, 1200 + Math.random() * 3000));
       const batch = postsToProcess.slice(i, i + commentBatch);
       const postsText = batch.map((p, idx) =>
         `Post ${idx + 1} [r/${p.subreddit}]:\nTitle: ${p.title}\nBody: ${p.selftext || "(no body)"}\nURL: ${p.url}`
