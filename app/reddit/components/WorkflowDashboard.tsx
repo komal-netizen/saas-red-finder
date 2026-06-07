@@ -103,24 +103,28 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
     setError("");
 
     try {
-      // Step 1: Browser fetches Reddit posts (no server IP blocking)
-      const sinceSeconds = timeframeSeconds(schedule);
-      const allPosts: RedditPost[] = [];
+      // Step 1: Fetch posts via Apify (server-side, handles Reddit blocking)
+      const scanRes = await fetch("/api/reddit/scan-posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subreddits: approvedSubreddits, keywords }),
+      });
+      const scanData = await scanRes.json();
+      if (!scanRes.ok) throw new Error(scanData.error || "Failed to fetch posts");
 
-      for (const sub of approvedSubreddits) {
-        const posts = await fetchSubredditPosts(sub, sinceSeconds);
-        allPosts.push(...posts);
-      }
+      const allPosts: RedditPost[] = (scanData.results || []).flatMap(
+        (r: { subreddit: string; posts: RedditPost[] }) => r.posts
+      );
 
       setPostCount(allPosts.length);
 
       if (allPosts.length === 0) {
-        setError(`No posts found in the last ${schedule === "hourly" ? "hour" : schedule === "daily" ? "24 hours" : "week"}. Try a longer timeframe or check your subreddit names.`);
+        setError("No posts found. Try broader keywords or check your subreddit names.");
         setStatus("error");
         return;
       }
 
-      // Step 2: Send to server for AI filtering + comment generation + email
+      // Step 2: AI filtering + comment generation + email
       setStatus("analyzing");
 
       const res = await fetch("/api/reddit/run-agent", {
