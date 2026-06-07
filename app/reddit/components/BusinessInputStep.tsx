@@ -46,6 +46,7 @@ export function BusinessInputStep({ value, onChange, onNext }: Props) {
   const [fromCache, setFromCache] = useState(false);
 
   const handleSubmit = async () => {
+    if (!value.projectName?.trim()) { setError("Please enter a project name."); return; }
     if (!value.businessDescription && !value.websiteUrl && !value.keywords) {
       setError("Please fill in at least one field."); return;
     }
@@ -83,6 +84,10 @@ export function BusinessInputStep({ value, onChange, onNext }: Props) {
       <h2 className="text-lg font-semibold text-neutral-900 dark:text-white mb-1">Tell us about your business</h2>
       <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-6">The more detail you provide, the better our agent can find relevant subreddits.</p>
       <div className="space-y-5">
+        <div>
+          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">Project Name</label>
+          <input type="text" className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 py-2.5 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-[#ff4500] focus:border-transparent" placeholder="e.g. PT Mentorship Campaign" value={value.projectName || ""} onChange={(e) => onChange({ ...value, projectName: e.target.value })} />
+        </div>
         <div>
           <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">Business Description</label>
           <textarea rows={4} className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 py-3 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-[#ff4500] focus:border-transparent resize-none" placeholder="e.g. We offer AI-powered accounting software for freelancers and small businesses..." value={value.businessDescription} onChange={(e) => onChange({ ...value, businessDescription: e.target.value })} />

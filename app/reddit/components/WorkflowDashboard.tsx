@@ -1,7 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { BusinessInput } from "../page";
+
+interface Run {
+  id: string;
+  post_count: number;
+  relevant_count: number;
+  comment_count: number;
+  created_at: string;
+}
 
 interface Props {
   businessInput: BusinessInput;
@@ -9,6 +17,7 @@ interface Props {
   postTypes: string[];
   keywords: string;
   schedule: string;
+  projectId: string;
   onEditWorkflow: () => void;
 }
 
@@ -91,12 +100,20 @@ async function fetchSubredditPosts(subreddit: string, sinceSeconds: number): Pro
   return posts;
 }
 
-export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes, keywords, schedule, onEditWorkflow }: Props) {
+export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes, keywords, schedule, projectId, onEditWorkflow }: Props) {
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [error, setError] = useState("");
   const [lastRun, setLastRun] = useState<string | null>(null);
   const [postCount, setPostCount] = useState(0);
   const [resultCount, setResultCount] = useState(0);
+  const [runs, setRuns] = useState<Run[]>([]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`/api/projects/${projectId}/runs`)
+      .then(r => r.json())
+      .then(d => { if (d.runs) setRuns(d.runs); });
+  }, [projectId]);
 
   const handleRun = async () => {
     setStatus("fetching");
@@ -143,9 +160,21 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Agent failed");
 
-      setResultCount(data.commentCount || 0);
+      const commentCount = data.commentCount || 0;
+      setResultCount(commentCount);
       setStatus("done");
       setLastRun(new Date().toLocaleString());
+
+      // Save run to database
+      if (projectId) {
+        const runRes = await fetch(`/api/projects/${projectId}/runs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ post_count: allPosts.length, relevant_count: data.relevantCount || 0, comment_count: commentCount }),
+        });
+        const runData = await runRes.json();
+        if (runData.run) setRuns(prev => [runData.run, ...prev]);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setStatus("error");
@@ -292,9 +321,33 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
         </button>
 
         <p className="text-xs text-neutral-400 text-center mt-3">
-          Your browser fetches Reddit posts directly, then AI generates comments and emails you the full report.
+          Apify fetches Reddit posts, then AI generates comments and emails you the full report.
         </p>
       </div>
+
+      {/* Run history */}
+      {runs.length > 0 && (
+        <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-6">
+          <h3 className="text-sm font-semibold text-neutral-900 dark:text-white mb-4">Run History</h3>
+          <div className="space-y-2">
+            {runs.map((run) => (
+              <div key={run.id} className="flex items-center justify-between py-2.5 border-b border-neutral-100 dark:border-neutral-800 last:border-0">
+                <div>
+                  <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                    {new Date(run.created_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+                  </p>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    {run.post_count} posts scanned · {run.relevant_count} relevant · {run.comment_count} comments generated
+                  </p>
+                </div>
+                <span className="text-xs bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-100 dark:border-green-900/30 px-2 py-0.5 rounded-full">
+                  {run.comment_count} comments
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
