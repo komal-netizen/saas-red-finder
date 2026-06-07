@@ -94,7 +94,7 @@ Score each post 0-100. Return ONLY JSON array:
           if (match) {
             const scored = JSON.parse(match[0]) as { index: number; score: number; reason: string }[];
             for (const s of scored) {
-              if (s.score >= 70 && batch[s.index]) {
+              if (s.score >= 55 && batch[s.index]) {
                 relevantPosts.push({ ...batch[s.index], matchReason: s.reason, semanticScore: s.score });
               }
             }
@@ -107,12 +107,14 @@ Score each post 0-100. Return ONLY JSON array:
       return NextResponse.json({ error: "No relevant posts found matching your post types. Try broader descriptions or check back later." }, { status: 200 });
     }
 
-    // Step 2: Generate comments for relevant posts
+    // Step 2: Generate comments for relevant posts (up to 30)
     const comments: CommentResult[] = [];
     const commentBatch = 5;
+    const postsToProcess = relevantPosts.slice(0, 30);
 
-    for (let i = 0; i < relevantPosts.length; i += commentBatch) {
-      const batch = relevantPosts.slice(i, i + commentBatch);
+    for (let i = 0; i < postsToProcess.length; i += commentBatch) {
+      if (i > 0) await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
+      const batch = postsToProcess.slice(i, i + commentBatch);
       const postsText = batch.map((p, idx) =>
         `Post ${idx + 1} [r/${p.subreddit}]:\nTitle: ${p.title}\nBody: ${p.selftext || "(no body)"}\nURL: ${p.url}`
       ).join("\n\n---\n\n");
@@ -193,75 +195,104 @@ Return ONLY a JSON array:
 }
 
 function buildEmailHtml(comments: CommentResult[], business: string, timeframe: string, runAt: string): string {
-  const rows = comments.map((c, i) => `
-    <tr style="border-bottom: 1px solid #e5e7eb;">
-      <td style="padding: 20px 0;">
-        <div style="margin-bottom: 6px;">
-          <span style="display: inline-block; background: #fff7ed; color: #ff4500; border: 1px solid #fed7aa; border-radius: 9999px; padding: 2px 10px; font-size: 12px; font-weight: 600;">r/${c.subreddit}</span>
-          <span style="display: inline-block; background: ${c.safetyScore >= 80 ? "#f0fdf4" : "#fefce8"}; color: ${c.safetyScore >= 80 ? "#16a34a" : "#ca8a04"}; border: 1px solid ${c.safetyScore >= 80 ? "#bbf7d0" : "#fde68a"}; border-radius: 9999px; padding: 2px 10px; font-size: 12px; margin-left: 6px;">Safety ${c.safetyScore}/100</span>
+  const bySubreddit: Record<string, CommentResult[]> = {};
+  for (const c of comments) {
+    if (!bySubreddit[c.subreddit]) bySubreddit[c.subreddit] = [];
+    bySubreddit[c.subreddit].push(c);
+  }
+
+  const sections = Object.entries(bySubreddit).map(([sub, posts]) => `
+    <div style="margin-bottom: 40px;">
+      <div style="background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 16px; margin-bottom: 16px; display: inline-block;">
+        <span style="font-size: 15px; font-weight: 700; color: #ff4500;">r/${sub}</span>
+        <span style="font-size: 12px; color: #b45309; margin-left: 8px;">${posts.length} opportunit${posts.length === 1 ? "y" : "ies"}</span>
+      </div>
+      ${posts.map((c, i) => `
+        <div style="border: 1px solid #e5e7eb; border-radius: 10px; padding: 20px; margin-bottom: 16px; background: #fff;">
+          <!-- Post number + badges -->
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
+            <span style="background: #111827; color: white; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">#${i + 1}</span>
+            <span style="background: ${c.safetyScore >= 80 ? "#f0fdf4" : "#fefce8"}; color: ${c.safetyScore >= 80 ? "#16a34a" : "#ca8a04"}; border: 1px solid ${c.safetyScore >= 80 ? "#bbf7d0" : "#fde68a"}; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">Safety ${c.safetyScore}/100</span>
+            <span style="background: #f3f4f6; color: #6b7280; font-size: 11px; padding: 2px 8px; border-radius: 4px;">Promotion: ${c.promotionLevel}</span>
+          </div>
+
+          <!-- Post title -->
+          <a href="${c.postUrl}" style="display: block; font-size: 15px; font-weight: 600; color: #111827; text-decoration: none; margin-bottom: 4px; line-height: 1.5;">${c.postTitle}</a>
+          <a href="${c.postUrl}" style="font-size: 12px; color: #9ca3af; text-decoration: none; display: block; margin-bottom: 14px;">${c.postUrl}</a>
+
+          <!-- Divider -->
+          <div style="border-top: 1px solid #f3f4f6; margin-bottom: 14px;"></div>
+
+          <!-- Comment label -->
+          <p style="margin: 0 0 6px; font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em;">Suggested Comment</p>
+
+          <!-- Comment box -->
+          <div style="background: #f9fafb; border-left: 3px solid #ff4500; padding: 14px 16px; border-radius: 0 8px 8px 0; margin-bottom: 12px;">
+            <p style="margin: 0; font-size: 14px; color: #374151; line-height: 1.7; white-space: pre-wrap;">${c.comment}</p>
+          </div>
+
+          ${c.keywordsUsed?.length ? `<p style="margin: 0 0 12px; font-size: 12px; color: #9ca3af;">Keywords used: <strong style="color: #6b7280;">${c.keywordsUsed.join(", ")}</strong></p>` : ""}
+          ${c.safetyNotes ? `<p style="margin: 0 0 12px; font-size: 12px; color: #9ca3af;">Safety notes: ${c.safetyNotes}</p>` : ""}
+
+          <!-- CTA -->
+          <a href="${c.postUrl}" style="display: inline-block; background: #ff4500; color: white; text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 18px; border-radius: 7px;">Open Post on Reddit →</a>
         </div>
-        <a href="${c.postUrl}" style="display: block; font-size: 15px; font-weight: 600; color: #111827; text-decoration: none; margin-bottom: 12px; line-height: 1.4;">${i + 1}. ${c.postTitle}</a>
-        <div style="background: #f9fafb; border-left: 3px solid #ff4500; padding: 14px 16px; border-radius: 0 8px 8px 0; margin-bottom: 10px;">
-          <p style="margin: 0; font-size: 14px; color: #374151; line-height: 1.6;">${c.comment}</p>
-        </div>
-        <div style="display: flex; gap: 12px; font-size: 12px; color: #9ca3af;">
-          <span>Promotion: <strong style="color: #6b7280;">${c.promotionLevel}</strong></span>
-          ${c.keywordsUsed?.length ? `<span>Keywords: <strong style="color: #6b7280;">${c.keywordsUsed.join(", ")}</strong></span>` : ""}
-        </div>
-        <div style="margin-top: 8px;">
-          <a href="${c.postUrl}" style="display: inline-block; background: #ff4500; color: white; text-decoration: none; font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 6px;">View Post & Comment →</a>
-        </div>
-      </td>
-    </tr>
+      `).join("")}
+    </div>
   `).join("");
 
-  return `
-<!DOCTYPE html>
+  const toc = Object.entries(bySubreddit).map(([sub, posts]) =>
+    `<tr><td style="padding: 6px 0; font-size: 13px; color: #374151;">r/${sub}</td><td style="padding: 6px 0; font-size: 13px; color: #6b7280; text-align: right;">${posts.length} post${posts.length !== 1 ? "s" : ""}</td></tr>`
+  ).join("");
+
+  return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin: 0; padding: 0; background: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
-  <div style="max-width: 680px; margin: 0 auto; padding: 32px 16px;">
+<div style="max-width: 720px; margin: 0 auto; padding: 32px 16px;">
+<div style="background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
 
-    <div style="background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-
-      <!-- Header -->
-      <div style="background: #ff4500; padding: 28px 32px;">
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-          <div style="width: 32px; height: 32px; background: rgba(255,255,255,0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-            <span style="color: white; font-size: 18px;">🤖</span>
-          </div>
-          <h1 style="margin: 0; color: white; font-size: 20px; font-weight: 700;">Reddit Agent Report</h1>
-        </div>
-        <p style="margin: 0; color: rgba(255,255,255,0.85); font-size: 14px;">
-          ${comments.length} comment opportunities found from the ${timeframe} · ${runAt}
-        </p>
-      </div>
-
-      <!-- Summary -->
-      <div style="padding: 24px 32px; background: #fff7ed; border-bottom: 1px solid #fed7aa;">
-        <p style="margin: 0; font-size: 14px; color: #92400e;">
-          <strong>Business:</strong> ${business}
-        </p>
-        <p style="margin: 8px 0 0; font-size: 13px; color: #b45309;">
-          Click any post link to go directly to Reddit and paste your comment. Each suggestion is crafted to add genuine value to the conversation.
-        </p>
-      </div>
-
-      <!-- Comments -->
-      <div style="padding: 0 32px;">
-        <table style="width: 100%; border-collapse: collapse;">
-          ${rows}
-        </table>
-      </div>
-
-      <!-- Footer -->
-      <div style="padding: 24px 32px; background: #f9fafb; border-top: 1px solid #e5e7eb; text-align: center;">
-        <p style="margin: 0; font-size: 12px; color: #9ca3af;">
-          Generated by Reddit Marketing Agent · Always review comments before posting
-        </p>
-      </div>
-    </div>
+  <!-- Header -->
+  <div style="background: #ff4500; padding: 28px 36px;">
+    <h1 style="margin: 0 0 6px; color: white; font-size: 22px; font-weight: 800;">Reddit Engagement Report</h1>
+    <p style="margin: 0; color: rgba(255,255,255,0.85); font-size: 14px;">${comments.length} comment opportunities · ${timeframe} · Generated ${runAt}</p>
   </div>
+
+  <!-- Business summary -->
+  <div style="padding: 20px 36px; background: #fff7ed; border-bottom: 1px solid #fed7aa;">
+    <p style="margin: 0 0 4px; font-size: 12px; font-weight: 700; color: #b45309; text-transform: uppercase; letter-spacing: 0.05em;">Business</p>
+    <p style="margin: 0; font-size: 14px; color: #92400e;">${business}</p>
+  </div>
+
+  <!-- Table of contents -->
+  <div style="padding: 24px 36px; border-bottom: 1px solid #e5e7eb;">
+    <p style="margin: 0 0 12px; font-size: 13px; font-weight: 700; color: #111827;">Contents</p>
+    <table style="width: 100%; border-collapse: collapse;">
+      <tr style="border-bottom: 1px solid #f3f4f6;">
+        <td style="padding: 6px 0; font-size: 13px; font-weight: 600; color: #374151;">Subreddit</td>
+        <td style="padding: 6px 0; font-size: 13px; font-weight: 600; color: #374151; text-align: right;">Posts</td>
+      </tr>
+      ${toc}
+      <tr style="border-top: 2px solid #e5e7eb;">
+        <td style="padding: 8px 0; font-size: 13px; font-weight: 700; color: #111827;">Total</td>
+        <td style="padding: 8px 0; font-size: 13px; font-weight: 700; color: #ff4500; text-align: right;">${comments.length}</td>
+      </tr>
+    </table>
+    <p style="margin: 12px 0 0; font-size: 12px; color: #9ca3af;">Review each comment below, personalise if needed, then paste directly on Reddit. Always read the full thread before commenting.</p>
+  </div>
+
+  <!-- Main content -->
+  <div style="padding: 32px 36px;">
+    ${sections}
+  </div>
+
+  <!-- Footer -->
+  <div style="padding: 20px 36px; background: #f9fafb; border-top: 1px solid #e5e7eb; text-align: center;">
+    <p style="margin: 0; font-size: 12px; color: #9ca3af;">Generated by Reddit Marketing Agent · Always review before posting · Never spam</p>
+  </div>
+
+</div>
+</div>
 </body>
 </html>`;
 }
