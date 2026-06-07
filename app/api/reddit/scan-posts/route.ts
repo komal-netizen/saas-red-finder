@@ -2,76 +2,104 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 120;
 
-const ONE_MONTH_AGO = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
-const ARCTIC_BASE = "https://arctic-shift.quanticdev.com/api";
+const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
+const ACTOR_ID = "trudax~reddit-scraper-lite";
 
-async function fetchFromArctic(subreddit: string, keywords: string): Promise<RedditPost[]> {
-  const posts: RedditPost[] = [];
-  const seen = new Set<string>();
-  const afterDate = new Date(ONE_MONTH_AGO * 1000).toISOString();
+interface RedditPost {
+  id: string;
+  title: string;
+  selftext: string;
+  url: string;
+  subreddit: string;
+  score: number;
+  numComments: number;
+  created: number;
+  author: string;
+  flair: string;
+  relevance?: number;
+}
 
-  // Search by keyword query + subreddit, get up to 100 posts
-  const queries: string[] = [];
-
-  // If keywords provided, search for each one
-  if (keywords) {
-    const kwList = keywords.split(/[,]+/).map(s => s.trim()).filter(Boolean).slice(0, 4);
-    for (const kw of kwList) {
-      queries.push(kw);
-    }
-  } else {
-    queries.push(""); // no keyword filter, get general posts
+async function fetchPostsViaApify(subreddit: string, keywords: string): Promise<RedditPost[]> {
+  if (!APIFY_TOKEN) {
+    console.error("APIFY_API_TOKEN not set");
+    return [];
   }
 
-  for (const query of queries) {
-    try {
-      const params = new URLSearchParams({
-        subreddit,
-        after: afterDate,
-        limit: "100",
-        sort: "desc",
-        ...(query ? { query } : {}),
-      });
+  const searches = keywords
+    ? keywords.split(/[,]+/).map(k => k.trim()).filter(Boolean).slice(0, 3)
+    : [""];
 
-      const url = `${ARCTIC_BASE}/posts/search?${params}`;
-      console.log(`Arctic Shift: ${url}`);
+  const startUrls = searches.map(kw => ({
+    url: kw
+      ? `https://www.reddit.com/r/${subreddit}/search/?q=${encodeURIComponent(kw)}&sort=new&t=month`
+      : `https://www.reddit.com/r/${subreddit}/new/`,
+  }));
 
-      const res = await fetch(url, {
-        headers: { "Accept": "application/json" },
-        signal: AbortSignal.timeout(15000),
-      });
+  // Also add a direct new posts URL
+  startUrls.push({ url: `https://www.reddit.com/r/${subreddit}/new/` });
 
-      if (!res.ok) {
-        console.log(`Arctic Shift r/${subreddit} query="${query}" → ${res.status}`);
-        continue;
+  const input = {
+    startUrls,
+    maxItems: 50,
+    maxPostCount: 50,
+    skipComments: true,
+    proxy: { useApifyProxy: true },
+  };
+
+  try {
+    const runRes = await fetch(
+      `https://api.apify.com/v2/acts/${ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=90&memory=256`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+        signal: AbortSignal.timeout(100000),
       }
+    );
 
-      const data = await res.json();
-      const items = data?.data || [];
-
-      for (const p of items) {
-        if (!p.title || seen.has(p.id)) continue;
-        seen.add(p.id);
-        posts.push({
-          id: p.id,
-          title: p.title,
-          selftext: (p.selftext || "").slice(0, 800),
-          url: `https://www.reddit.com${p.permalink}`,
-          subreddit: p.subreddit || subreddit,
-          score: p.score || 0,
-          numComments: p.num_comments || 0,
-          created: p.created_utc || 0,
-          author: p.author || "",
-          flair: p.link_flair_text || "",
-        });
-      }
-    } catch (e) {
-      console.log(`Arctic Shift error for r/${subreddit}:`, e);
+    if (!runRes.ok) {
+      const text = await runRes.text();
+      console.error(`Apify error for r/${subreddit}: ${runRes.status} ${text.slice(0, 200)}`);
+      return [];
     }
-  }
 
-  console.log(`r/${subreddit}: fetched ${posts.length} posts via Arctic Shift`);
-  return posts;
+    const items = await runRes.json();
+    const posts: RedditPost[] = [];
+    const seen = new Set<string>();
+    const oneMonthAgo = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+
+    for (const item of Array.isArray(items) ? items : []) {
+      const id = item.id || item.postId || item.url;
+      if (!id || seen.has(id)) continue;
+      if (!item.title) continue;
+
+      const created = item.createdAt
+        ? Math.floor(new Date(item.createdAt).getTime() / 1000)
+        : item.created_utc || 0;
+
+      if (created && created < oneMonthAgo) continue;
+      seen.add(id);
+
+      posts.push({
+        id: String(id),
+        title: item.title || "",
+        selftext: (item.body || item.selftext || item.text || "").slice(0, 800),
+        url: item.url?.startsWith("http") ? item.url : `https://www.reddit.com${item.url || ""}`,
+        subreddit: item.subreddit || subreddit,
+        score: item.score || item.upvotes || 0,
+        numComments: item.numberOfComments || item.numComments || item.num_comments || 0,
+        created,
+        author: item.author || item.username || "",
+        flair: item.flair || item.linkFlairText || "",
+      });
+    }
+
+    console.log(`Apify r/${subreddit}: ${posts.length} posts returned`);
+    return posts;
+  } catch (e) {
+    console.error(`Apify fetch error for r/${subreddit}:`, e);
+    return [];
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -89,10 +117,10 @@ export async function POST(req: NextRequest) {
       ? keywords.toLowerCase().split(/[,\s]+/).filter(Boolean)
       : [];
 
-    const results: SubredditPosts[] = [];
+    const results: { subreddit: string; posts: (RedditPost & { relevance: number })[] }[] = [];
 
     for (const subreddit of subreddits) {
-      const posts = await fetchFromArctic(subreddit, keywords);
+      const posts = await fetchPostsViaApify(subreddit, keywords);
 
       const scored = posts
         .map((post) => {
@@ -114,11 +142,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    console.log(`Total: ${results.length} subreddits, ${results.reduce((s, r) => s + r.posts.length, 0)} posts`);
-
-    if (results.length === 0) {
-      return NextResponse.json({ results: [], note: "No posts returned from Arctic Shift." });
-    }
+    const total = results.reduce((s, r) => s + r.posts.length, 0);
+    console.log(`Total: ${results.length} subreddits, ${total} posts via Apify`);
 
     return NextResponse.json({ results });
   } catch (err) {
@@ -126,6 +151,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to scan posts" }, { status: 500 });
   }
 }
-
-interface RedditPost { id: string; title: string; selftext: string; url: string; subreddit: string; score: number; numComments: number; created: number; author: string; flair: string; relevance?: number; }
-interface SubredditPosts { subreddit: string; posts: (RedditPost & { relevance: number })[]; }
