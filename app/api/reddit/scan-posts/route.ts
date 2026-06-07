@@ -4,6 +4,7 @@ export const maxDuration = 120;
 
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 const ACTOR_ID = "trudax~reddit-scraper-lite";
+const ACTOR_ID_FALLBACK = "apify~reddit-scraper";
 
 interface RedditPost {
   id: string;
@@ -48,7 +49,7 @@ async function fetchPostsViaApify(subreddit: string, keywords: string): Promise<
 
   try {
     const runRes = await fetch(
-      `https://api.apify.com/v2/acts/${ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=90&memory=256`,
+      `https://api.apify.com/v2/acts/${ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=90&memory=512`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -57,13 +58,29 @@ async function fetchPostsViaApify(subreddit: string, keywords: string): Promise<
       }
     );
 
+    let items: unknown[];
     if (!runRes.ok) {
       const text = await runRes.text();
-      console.error(`Apify error for r/${subreddit}: ${runRes.status} ${text.slice(0, 200)}`);
-      return [];
+      console.error(`Apify lite failed for r/${subreddit}: ${runRes.status} — trying fallback actor`);
+      // Fallback to official Reddit scraper
+      const fallbackRes = await fetch(
+        `https://api.apify.com/v2/acts/${ACTOR_ID_FALLBACK}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=90&memory=512`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startUrls, maxItems: 50, skipComments: true, proxy: { useApifyProxy: true } }),
+          signal: AbortSignal.timeout(100000),
+        }
+      );
+      if (!fallbackRes.ok) {
+        const fb = await fallbackRes.text();
+        console.error(`Apify fallback also failed for r/${subreddit}: ${fallbackRes.status} ${fb.slice(0, 200)}`);
+        return [];
+      }
+      items = await fallbackRes.json();
+    } else {
+      items = await runRes.json();
     }
-
-    const items = await runRes.json();
     console.log(`Apify r/${subreddit}: raw item count=${Array.isArray(items) ? items.length : "not array"}`);
     if (Array.isArray(items) && items.length > 0) {
       console.log(`Apify sample item keys:`, Object.keys(items[0]).join(", "));
