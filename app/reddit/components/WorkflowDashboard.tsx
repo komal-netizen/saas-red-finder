@@ -51,59 +51,6 @@ const STATUS_MESSAGES: Record<AgentStatus, string> = {
   error: "",
 };
 
-const ONE_DAY = 24 * 60 * 60;
-const ONE_WEEK = 7 * ONE_DAY;
-const ONE_MONTH = 30 * ONE_DAY;
-
-function timeframeSeconds(schedule: string): number {
-  if (schedule === "hourly") return 3600;
-  if (schedule === "daily") return ONE_DAY;
-  if (schedule === "weekly") return ONE_WEEK;
-  return ONE_MONTH;
-}
-
-async function fetchSubredditPosts(subreddit: string, sinceSeconds: number): Promise<RedditPost[]> {
-  const posts: RedditPost[] = [];
-  const seen = new Set<string>();
-  const cutoff = Math.floor(Date.now() / 1000) - sinceSeconds;
-
-  const endpoints = [
-    `https://www.reddit.com/r/${subreddit}/new.json?limit=50&raw_json=1`,
-    `https://www.reddit.com/r/${subreddit}/hot.json?limit=50&raw_json=1`,
-  ];
-
-  for (const url of endpoints) {
-    try {
-      const res = await fetch(url, {
-        headers: { "Accept": "application/json" },
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!res.ok) continue;
-      const data = await res.json();
-      for (const item of data?.data?.children || []) {
-        const p = item.data;
-        if (!p.title || seen.has(p.id)) continue;
-        if (p.created_utc < cutoff) continue;
-        seen.add(p.id);
-        posts.push({
-          id: p.id,
-          title: p.title,
-          selftext: (p.selftext || "").slice(0, 800),
-          url: `https://www.reddit.com${p.permalink}`,
-          subreddit: p.subreddit || subreddit,
-          score: p.score || 0,
-          numComments: p.num_comments || 0,
-          created: p.created_utc || 0,
-          author: p.author || "",
-          flair: p.link_flair_text || "",
-        });
-      }
-      // Small delay between requests
-      await new Promise(r => setTimeout(r, 1500));
-    } catch { /* skip failed subreddit */ }
-  }
-  return posts;
-}
 
 export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes, keywords, schedule, projectId, toneSamples: initialToneSamples = "", onEditWorkflow }: Props) {
   const [status, setStatus] = useState<AgentStatus>("idle");
