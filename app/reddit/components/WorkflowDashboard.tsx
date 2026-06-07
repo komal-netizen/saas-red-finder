@@ -196,8 +196,24 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
   };
 
   const isRunning = ["fetching", "analyzing", "generating", "emailing"].includes(status);
-  const scheduleLabel = schedule === "manual" ? "Manual" : schedule === "hourly" ? "Every hour" : schedule === "daily" ? "Every day" : "Every week";
+  const scheduleLabel = schedule === "manual" ? "Manual" : schedule === "hourly" ? "Every hour" : schedule === "daily" ? "Every day" : schedule === "weekly" ? "Every week" : "Every month";
   const timeframeLabel = schedule === "hourly" ? "past hour" : schedule === "daily" ? "past 24 hours" : schedule === "weekly" ? "past week" : "past month";
+
+  const nextRunLabel = (() => {
+    if (schedule === "manual") return null;
+    const intervals: Record<string, number> = { hourly: 3600, daily: 86400, weekly: 604800, monthly: 2592000 };
+    const interval = intervals[schedule];
+    if (!interval) return null;
+    const lastRunTime = runs[0] ? new Date(runs[0].created_at).getTime() : 0;
+    const nextMs = lastRunTime + interval * 1000;
+    const diffMs = nextMs - Date.now();
+    if (diffMs <= 0) return "Due now";
+    const h = Math.floor(diffMs / 3600000);
+    const m = Math.floor((diffMs % 3600000) / 60000);
+    if (h > 24) return `in ${Math.floor(h / 24)}d ${h % 24}h`;
+    if (h > 0) return `in ${h}h ${m}m`;
+    return `in ${m}m`;
+  })();
 
   return (
     <div className="space-y-6">
@@ -245,7 +261,14 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
             </div>
             <div>
               <p className="text-xs font-medium text-neutral-400 uppercase tracking-wide mb-1">Schedule</p>
-              <span className="text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 px-2.5 py-1 rounded-full">{scheduleLabel}</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 px-2.5 py-1 rounded-full">{scheduleLabel}</span>
+                {nextRunLabel && (
+                  <span className="text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30 px-2.5 py-1 rounded-full">
+                    Next run {nextRunLabel}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
