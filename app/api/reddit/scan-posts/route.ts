@@ -64,6 +64,11 @@ async function fetchPostsViaApify(subreddit: string, keywords: string): Promise<
     }
 
     const items = await runRes.json();
+    console.log(`Apify r/${subreddit}: raw item count=${Array.isArray(items) ? items.length : "not array"}`);
+    if (Array.isArray(items) && items.length > 0) {
+      console.log(`Apify sample item keys:`, Object.keys(items[0]).join(", "));
+      console.log(`Apify sample item:`, JSON.stringify(items[0]).slice(0, 400));
+    }
     const posts: RedditPost[] = [];
     const seen = new Set<string>();
     const oneMonthAgo = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
