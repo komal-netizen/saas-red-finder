@@ -20,6 +20,9 @@ export function AnalyticsDashboard() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [refreshingKarma, setRefreshingKarma] = useState(false);
+  const [usernameInput, setUsernameInput] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -35,6 +38,25 @@ export function AnalyticsDashboard() {
     const res = await fetch("/api/auth/reddit/refresh-karma", { method: "POST" });
     if (res.ok) await load();
     setRefreshingKarma(false);
+  };
+
+  const connectReddit = async () => {
+    if (!usernameInput.trim()) return;
+    setConnecting(true);
+    setConnectError("");
+    const res = await fetch("/api/auth/reddit/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: usernameInput.trim() }),
+    });
+    const json = await res.json();
+    if (res.ok) {
+      setUsernameInput("");
+      await load();
+    } else {
+      setConnectError(json.error || "Failed to connect");
+    }
+    setConnecting(false);
   };
 
   const maxComments = data ? Math.max(...data.recentRuns.map(r => r.comments), 1) : 1;
@@ -95,17 +117,27 @@ export function AnalyticsDashboard() {
                     </button>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between w-full">
-                    <div>
-                      <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Connect Reddit Account</p>
-                      <p className="text-xs text-neutral-400 mt-0.5">Track karma growth and verify comments</p>
+                  <div className="w-full">
+                    <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Track Reddit Karma</p>
+                    <p className="text-xs text-neutral-400 mb-3">Enter your Reddit username to track karma growth</p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={usernameInput}
+                        onChange={e => setUsernameInput(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && connectReddit()}
+                        placeholder="u/your_username"
+                        className="flex-1 text-sm bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-[#ff4500]/30"
+                      />
+                      <button
+                        onClick={connectReddit}
+                        disabled={connecting || !usernameInput.trim()}
+                        className="bg-[#ff4500] hover:bg-[#e03d00] disabled:opacity-50 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+                      >
+                        {connecting ? "Saving…" : "Save"}
+                      </button>
                     </div>
-                    <a
-                      href="/api/auth/reddit/connect"
-                      className="flex items-center gap-2 bg-[#ff4500] hover:bg-[#e03d00] text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
-                    >
-                      Connect Reddit
-                    </a>
+                    {connectError && <p className="text-xs text-red-500 mt-2">{connectError}</p>}
                   </div>
                 )}
               </div>
