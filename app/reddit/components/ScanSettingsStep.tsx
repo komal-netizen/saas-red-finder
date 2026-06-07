@@ -8,6 +8,8 @@ interface Props {
   approvedSubreddits: string[];
   onBack: () => void;
   onDone: (postTypes: string[], keywords: string, schedule: string) => void;
+  initialPostTypes?: string[];
+  initialSchedule?: string;
 }
 
 export type ReportItem = {
@@ -26,14 +28,14 @@ const SCHEDULE_OPTIONS = [
   { value: "hourly", label: "Every hour" },
 ];
 
-export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, onDone }: Props) {
-  const [selectedPostTypes, setSelectedPostTypes] = useState<string[]>([]);
+export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, onDone, initialPostTypes = [], initialSchedule = "daily" }: Props) {
+  const [selectedPostTypes, setSelectedPostTypes] = useState<string[]>(initialPostTypes);
   const [customPostType, setCustomPostType] = useState("");
   const [searchKeywords, setSearchKeywords] = useState(businessInput.keywords || "");
   const [postSuggestions, setPostSuggestions] = useState<string[]>([]);
   const [keywordSuggestions, setKeywordSuggestions] = useState<string[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-  const [schedule, setSchedule] = useState("daily");
+  const [schedule, setSchedule] = useState(initialSchedule);
 
   const togglePostType = (s: string) =>
     setSelectedPostTypes((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);

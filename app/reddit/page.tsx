@@ -141,8 +141,21 @@ export default function RedditPage() {
       keywords: project.keywords,
       email: project.email,
     });
-    setApprovedSubreddits(project.approved_subreddits || []);
-    setStep(1);
+    const saved = project.approved_subreddits || [];
+    setApprovedSubreddits(saved);
+    // Reconstruct subreddit objects from saved names so step 2 is pre-populated
+    setSubreddits(saved.map(name => ({
+      name,
+      displayName: `r/${name}`,
+      description: "",
+      subscribers: 0,
+      relevanceScore: 100,
+      marketingApproach: "",
+      communityRules: "",
+      over18: false,
+    })));
+    // Jump straight to step 3 — all data is already saved
+    setStep(3);
     setView("setup");
   };
 
@@ -285,7 +298,14 @@ export default function RedditPage() {
               <SubredditApprovalStep subreddits={subreddits} approved={approvedSubreddits} onApprovalChange={setApprovedSubreddits} onBack={() => setStep(1)} onNext={() => setStep(3)} businessInput={businessInput} skipScan />
             )}
             {step === 3 && (
-              <ScanSettingsStep businessInput={businessInput} approvedSubreddits={approvedSubreddits} onBack={() => setStep(2)} onDone={handleWorkflowSaved} />
+              <ScanSettingsStep
+                businessInput={businessInput}
+                approvedSubreddits={approvedSubreddits}
+                onBack={() => setStep(2)}
+                onDone={handleWorkflowSaved}
+                initialPostTypes={activeProject?.post_types || []}
+                initialSchedule={activeProject?.schedule || "daily"}
+              />
             )}
           </>
         )}
