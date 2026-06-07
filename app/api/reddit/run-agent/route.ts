@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const resend = new Resend(process.env.RESEND_API_KEY);
 
-    const { posts, postTypes, keywords, businessDescription, email, schedule, toneSamples } = await req.json() as {
+    const { posts, postTypes, keywords, businessDescription, email, schedule, toneSamples, projectId, userId } = await req.json() as {
       posts: Post[];
       postTypes: string[];
       keywords: string;
@@ -42,6 +42,8 @@ export async function POST(req: NextRequest) {
       email: string;
       schedule: string;
       toneSamples?: string;
+      projectId?: string;
+      userId?: string;
     };
 
     if (!posts?.length) return NextResponse.json({ error: "No posts provided" }, { status: 400 });
@@ -184,6 +186,27 @@ Return ONLY a JSON array:
         subject: `Reddit Report — ${comments.length} opportunities found (${now})`,
         html: emailHtml,
       });
+    }
+
+    // Step 4: Save tracked posts to DB
+    if (projectId && userId && comments.length > 0) {
+      try {
+        const { createServiceClient } = await import("@/lib/supabase/server");
+        const svc = createServiceClient();
+        await svc.from("tracked_posts").insert(
+          comments.map(c => ({
+            user_id: userId,
+            project_id: projectId,
+            post_url: c.postUrl,
+            post_title: c.postTitle,
+            subreddit: c.subreddit,
+            suggested_comment: c.comment,
+            status: "pending",
+          }))
+        );
+      } catch (e) {
+        console.error("Failed to save tracked posts:", e);
+      }
     }
 
     console.log(`run-agent: ${posts.length} posts → ${relevantPosts.length} relevant → ${comments.length} comments → emailed to ${email}`);

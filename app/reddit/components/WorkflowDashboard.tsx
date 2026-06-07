@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
 import type { BusinessInput } from "../page";
 import { ToneSettings } from "./ToneSettings";
+import { PostTracker } from "./PostTracker";
+import { AnalyticsDashboard } from "./AnalyticsDashboard";
 
 interface Run {
   id: string;
@@ -110,6 +113,11 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
   const [resultCount, setResultCount] = useState(0);
   const [runs, setRuns] = useState<Run[]>([]);
   const [toneSamples, setToneSamples] = useState(initialToneSamples);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id); });
+  }, []);
 
   useEffect(() => {
     if (!projectId) return;
@@ -158,6 +166,8 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
           email: businessInput.email,
           schedule,
           toneSamples,
+          projectId,
+          userId,
         }),
       });
 
@@ -335,6 +345,12 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
         initialSamples={toneSamples}
         onSaved={setToneSamples}
       />
+
+      {/* Post Tracker */}
+      <PostTracker projectId={projectId} />
+
+      {/* Analytics Dashboard */}
+      <AnalyticsDashboard />
 
       {/* Run history */}
       {runs.length > 0 && (
