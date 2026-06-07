@@ -62,30 +62,25 @@ export async function POST(req: NextRequest) {
           max_tokens: 1024,
           messages: [{
             role: "user",
-            content: `You are a strict relevance filter. A business wants to comment on Reddit posts where they can genuinely help.
+            content: `You are a relevance filter. A business wants to find Reddit posts where they can add genuine value.
 
 Business: ${businessDescription}
 
-Target audience and purpose: This business should ONLY engage where the post author or commenters are people this business directly serves. The comment must naturally solve their problem.
-
-Post types to look for (these are semantic descriptions, not keywords):
+The business is looking for posts matching ANY ONE of these types (OR logic — matching just one is enough):
 ${postTypes.map((t, i) => `${i + 1}. ${t}`).join("\n")}
 
-A post PASSES (score 70+) only if ALL of these are true:
-- The post author is clearly someone this business helps (matches the target audience)
-- The post topic matches at least one of the post type descriptions above
-- Leaving a comment about this business would genuinely help the person, not feel forced or spammy
+SCORING RULES:
+- Score 70-100: Post clearly matches at least one of the types above AND the business could genuinely help
+- Score 40-69: Post partially matches or is borderline relevant
+- Score 0-39: Post is unrelated, is news/poll/meme, or the business can't add value
 
-A post FAILS (score below 70) if:
-- The post is about a different audience (e.g. patients, not practitioners)
-- The post is news, a poll, or general discussion not seeking help
-- The business solution doesn't directly address what the person is struggling with
+Be GENEROUS — if the post author seems like someone any of the above descriptions could apply to, score it 55+. The goal is to find opportunities, not filter everything out.
 
 Posts (index | subreddit | title | excerpt):
 ${postList}
 
 Score each post 0-100. Return ONLY JSON array:
-[{"index": 0, "score": 85, "reason": "brief why this person needs what the business offers"}]`,
+[{"index": 0, "score": 85, "reason": "which post type it matches and why"}]`,
           }],
         });
 
@@ -95,7 +90,7 @@ Score each post 0-100. Return ONLY JSON array:
           if (match) {
             const scored = JSON.parse(match[0]) as { index: number; score: number; reason: string }[];
             for (const s of scored) {
-              if (s.score >= 55 && batch[s.index]) {
+              if (s.score >= 45 && batch[s.index]) {
                 relevantPosts.push({ ...batch[s.index], matchReason: s.reason, semanticScore: s.score });
               }
             }
