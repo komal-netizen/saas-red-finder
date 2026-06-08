@@ -74,7 +74,6 @@ export function ScanSettingsStep({ businessInput, approvedSubreddits, onBack, on
   const [error, setError] = useState("");
 
   const handleSave = () => {
-    if (selectedPostTypes.length === 0) { setError("Please select or add at least one post type."); return; }
     setError("");
     onDone(selectedPostTypes, searchKeywords, schedule);
   };
