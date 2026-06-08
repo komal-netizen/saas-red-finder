@@ -64,25 +64,30 @@ export async function POST(req: NextRequest) {
           max_tokens: 1024,
           messages: [{
             role: "user",
-            content: `You are a relevance filter. A business wants to find Reddit posts where they can add genuine value.
+            content: `You are an expert at finding Reddit posts where a business can add genuine value.
 
-Business: ${businessDescription}
+BUSINESS: ${businessDescription}
 
-The business is looking for posts matching ANY ONE of these types (OR logic — matching just one is enough):
+TARGET POST TYPES — these are descriptions of the KIND of person or situation we want to find (OR logic, one match is enough):
 ${postTypes.map((t, i) => `${i + 1}. ${t}`).join("\n")}
 
-SCORING RULES:
-- Score 70-100: Post clearly matches at least one of the types above AND the business could genuinely help
-- Score 40-69: Post partially matches or is borderline relevant
-- Score 0-39: Post is unrelated, is news/poll/meme, or the business can't add value
+HOW TO SCORE:
+- Read each post title + excerpt and ask: "Does this person match any of the target descriptions above?"
+- Ask: "Could this business genuinely help or add value here?"
+- Score 75-100: Strong match — person clearly fits one of the descriptions AND business can help
+- Score 50-74: Decent match — person probably fits, or there's a good opportunity
+- Score 25-49: Weak match — only tangentially related
+- Score 0-24: No match — off-topic, news article, meme, or business can't add value
 
-Be GENEROUS — if the post author seems like someone any of the above descriptions could apply to, score it 55+. The goal is to find opportunities, not filter everything out.
+IMPORTANT: The post types are DESCRIPTIONS not keywords. A post about "struggling with invoicing" matches a post type of "freelancer looking for better tools" even if those words don't appear. Think about WHO is posting and WHAT they need.
 
-Posts (index | subreddit | title | excerpt):
+Be generous — when in doubt, score higher. Missing an opportunity is worse than reviewing an extra post.
+
+Posts to score (index | subreddit | title | excerpt):
 ${postList}
 
-Score each post 0-100. Return ONLY JSON array:
-[{"index": 0, "score": 85, "reason": "which post type it matches and why"}]`,
+Return ONLY a JSON array, no explanation:
+[{"index": 0, "score": 85, "reason": "matches post type 2 — person is asking about X which fits the description of Y"}]`,
           }],
         });
 
@@ -92,7 +97,7 @@ Score each post 0-100. Return ONLY JSON array:
           if (match) {
             const scored = JSON.parse(match[0]) as { index: number; score: number; reason: string }[];
             for (const s of scored) {
-              if (s.score >= 45 && batch[s.index]) {
+              if (s.score >= 40 && batch[s.index]) {
                 relevantPosts.push({ ...batch[s.index], matchReason: s.reason, semanticScore: s.score });
               }
             }

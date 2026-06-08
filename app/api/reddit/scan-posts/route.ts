@@ -80,10 +80,45 @@ function mapItem(item: Record<string, unknown>, subreddit: string): RedditPost |
 }
 
 async function fetchViaRedditPublicApi(subreddit: string): Promise<RedditPost[]> {
+  // Try Arctic Shift API first — no auth, no rate limits, server-friendly
+  try {
+    const res = await fetch(
+      `https://arctic-shift.photon-reddit.com/api/posts/search?subreddit=${subreddit}&limit=50&sort=new`,
+      { headers: { "User-Agent": "RedditMarketingAgent/1.0" }, signal: AbortSignal.timeout(15000) }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const items: RedditPost[] = [];
+      const oneMonthAgo = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+      for (const p of data?.data || []) {
+        if (!p?.title) continue;
+        const created = p.created_utc || 0;
+        if (created && created < oneMonthAgo) continue;
+        items.push({
+          id: p.id,
+          title: p.title,
+          selftext: (p.selftext || "").slice(0, 800),
+          url: p.url?.startsWith("http") ? p.url : `https://www.reddit.com${p.permalink || ""}`,
+          subreddit: p.subreddit || subreddit,
+          score: p.score || 0,
+          numComments: p.num_comments || 0,
+          created,
+          author: p.author || "",
+          flair: p.link_flair_text || "",
+        });
+      }
+      if (items.length > 0) {
+        console.log(`Arctic Shift [r/${subreddit}]: ${items.length} posts`);
+        return items;
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Final fallback: Reddit public JSON
   try {
     const res = await fetch(
       `https://www.reddit.com/r/${subreddit}/new.json?limit=50&raw_json=1`,
-      { headers: { "User-Agent": "RedditMarketingAgent/1.0" }, signal: AbortSignal.timeout(15000) }
+      { headers: { "User-Agent": "Mozilla/5.0 (compatible; RedditBot/1.0)" }, signal: AbortSignal.timeout(15000) }
     );
     if (!res.ok) return [];
     const data = await res.json();
@@ -105,7 +140,7 @@ async function fetchViaRedditPublicApi(subreddit: string): Promise<RedditPost[]>
         flair: p.link_flair_text || "",
       });
     }
-    console.log(`Reddit public API fallback [r/${subreddit}]: ${posts.length} posts`);
+    console.log(`Reddit JSON fallback [r/${subreddit}]: ${posts.length} posts`);
     return posts;
   } catch {
     return [];
