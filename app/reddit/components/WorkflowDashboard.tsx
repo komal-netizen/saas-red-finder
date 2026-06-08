@@ -61,6 +61,7 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
   const [runs, setRuns] = useState<Run[]>([]);
   const [toneSamples, setToneSamples] = useState(initialToneSamples);
   const [userId, setUserId] = useState<string | null>(null);
+  const [failedSubreddits, setFailedSubreddits] = useState<string[]>([]);
 
   useEffect(() => {
     createClient().auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id); });
@@ -91,10 +92,12 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
         (r: { subreddit: string; posts: RedditPost[] }) => r.posts
       );
 
+      if (scanData.failed?.length) setFailedSubreddits(scanData.failed);
+
       setPostCount(allPosts.length);
 
       if (allPosts.length === 0) {
-        setError("No posts found. Try broader keywords or check your subreddit names.");
+        setError(`No posts found. ${scanData.failed?.length ? `These subreddits are restricted or private: ${scanData.failed.map((s: string) => `r/${s}`).join(", ")}. Try replacing them with active public subreddits.` : "Try different subreddit names."}`);
         setStatus("error");
         return;
       }
@@ -277,6 +280,12 @@ export function WorkflowDashboard({ businessInput, approvedSubreddits, postTypes
                 Report emailed to {businessInput.email}
               </p>
             </div>
+          </div>
+        )}
+
+        {failedSubreddits.length > 0 && status !== "error" && (
+          <div className="mb-4 text-sm bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 px-4 py-3 rounded-xl text-yellow-800 dark:text-yellow-300">
+            ⚠️ Could not fetch posts from: {failedSubreddits.map(s => `r/${s}`).join(", ")} — these may be private or restricted subreddits.
           </div>
         )}
 

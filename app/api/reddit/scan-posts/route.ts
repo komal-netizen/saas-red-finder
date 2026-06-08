@@ -213,6 +213,7 @@ export async function POST(req: NextRequest) {
     }
 
     const results: { subreddit: string; posts: (RedditPost & { relevance: number })[] }[] = [];
+    const failed: string[] = [];
 
     for (let i = 0; i < subreddits.length; i++) {
       const subreddit = subreddits[i];
@@ -227,13 +228,15 @@ export async function POST(req: NextRequest) {
           .map(post => ({ ...post, relevance: 0 }))
           .slice(0, 50);
         results.push({ subreddit, posts: scored });
+      } else {
+        failed.push(subreddit);
       }
     }
 
     const total = results.reduce((s, r) => s + r.posts.length, 0);
-    console.log(`Total: ${results.length} subreddits, ${total} posts`);
+    console.log(`Total: ${results.length} subreddits, ${total} posts, ${failed.length} failed`);
 
-    return NextResponse.json({ results });
+    return NextResponse.json({ results, failed });
   } catch (err) {
     console.error("scan-posts error:", err);
     return NextResponse.json({ error: "Failed to scan posts" }, { status: 500 });

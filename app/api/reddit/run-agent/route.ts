@@ -48,8 +48,15 @@ export async function POST(req: NextRequest) {
 
     if (!posts?.length) return NextResponse.json({ error: "No posts provided" }, { status: 400 });
 
-    // Step 1: Semantically filter posts using Claude
+    // If no post types provided, skip filtering and process all posts directly
     const relevantPosts: (Post & { matchReason: string; semanticScore: number })[] = [];
+
+    if (!postTypes?.length) {
+      // No filtering — use all posts, up to 30
+      for (const p of posts.slice(0, 30)) {
+        relevantPosts.push({ ...p, matchReason: "All posts selected (no post type filter)", semanticScore: 100 });
+      }
+    } else {
     const batchSize = 20;
 
     for (let i = 0; i < posts.length; i += batchSize) {
@@ -105,9 +112,10 @@ Return ONLY a JSON array, no explanation:
         }
       } catch { /* skip failed batch */ }
     }
+    } // end else (postTypes filter)
 
     if (relevantPosts.length === 0) {
-      return NextResponse.json({ error: "No relevant posts found matching your post types. Try broader descriptions or check back later." }, { status: 200 });
+      return NextResponse.json({ error: "No relevant posts found. Try different subreddits or broader post type descriptions." }, { status: 200 });
     }
 
     // Step 2: Generate comments for relevant posts (up to 30)
