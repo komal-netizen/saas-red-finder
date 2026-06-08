@@ -25,19 +25,19 @@ const randomDelay = (minMs: number, maxMs: number) => delay(minMs + Math.random(
 async function runApifyActor(startUrls: { url: string }[], label: string): Promise<unknown[]> {
   const input = {
     startUrls,
-    maxItems: 50,
-    maxPostCount: 50,
+    maxItems: 25,
+    maxPostCount: 25,
     skipComments: true,
     proxy: { useApifyProxy: true },
   };
 
   const res = await fetch(
-    `https://api.apify.com/v2/acts/${ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=180&memory=1024`,
+    `https://api.apify.com/v2/acts/${ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=60&memory=512`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
-      signal: AbortSignal.timeout(200000),
+      signal: AbortSignal.timeout(90000),
     }
   );
 
@@ -79,10 +79,43 @@ function mapItem(item: Record<string, unknown>, subreddit: string): RedditPost |
   };
 }
 
+async function fetchViaRedditPublicApi(subreddit: string): Promise<RedditPost[]> {
+  try {
+    const res = await fetch(
+      `https://www.reddit.com/r/${subreddit}/new.json?limit=50&raw_json=1`,
+      { headers: { "User-Agent": "RedditMarketingAgent/1.0" }, signal: AbortSignal.timeout(15000) }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const posts: RedditPost[] = [];
+    const oneMonthAgo = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+    for (const item of data?.data?.children || []) {
+      const p = item.data;
+      if (!p?.title || (p.created_utc && p.created_utc < oneMonthAgo)) continue;
+      posts.push({
+        id: p.id,
+        title: p.title,
+        selftext: (p.selftext || "").slice(0, 800),
+        url: `https://www.reddit.com${p.permalink}`,
+        subreddit: p.subreddit || subreddit,
+        score: p.score || 0,
+        numComments: p.num_comments || 0,
+        created: p.created_utc || 0,
+        author: p.author || "",
+        flair: p.link_flair_text || "",
+      });
+    }
+    console.log(`Reddit public API fallback [r/${subreddit}]: ${posts.length} posts`);
+    return posts;
+  } catch {
+    return [];
+  }
+}
+
 async function fetchPostsViaApify(subreddit: string, keywords: string): Promise<RedditPost[]> {
   if (!APIFY_TOKEN) {
     console.error("APIFY_API_TOKEN not set");
-    return [];
+    return fetchViaRedditPublicApi(subreddit);
   }
 
   const seen = new Set<string>();
@@ -96,6 +129,17 @@ async function fetchPostsViaApify(subreddit: string, keywords: string): Promise<
   for (const item of newFeedItems) {
     const post = mapItem(item as Record<string, unknown>, subreddit);
     if (post && !seen.has(post.id)) { seen.add(post.id); posts.push(post); }
+  }
+
+  // If Apify returned nothing, fall back to Reddit public API
+  if (posts.length === 0) {
+    console.log(`Apify returned 0 for r/${subreddit}, trying public API fallback`);
+    const fallback = await fetchViaRedditPublicApi(subreddit);
+    for (const post of fallback) {
+      if (!seen.has(post.id)) { seen.add(post.id); posts.push(post); }
+    }
+    console.log(`r/${subreddit}: ${posts.length} unique posts collected`);
+    return posts;
   }
 
   // Human-like pause between requests (3–7 seconds)
